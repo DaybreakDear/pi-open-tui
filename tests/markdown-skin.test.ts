@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { MarkdownTransformContext, Theme } from "@earendil-works/pi-coding-agent";
-import { Markdown, type MarkdownTheme, type Token } from "@earendil-works/pi-tui";
+import { initTheme, UserMessageComponent, type MarkdownTransformContext, type Theme } from "@earendil-works/pi-coding-agent";
+import { Markdown, visibleWidth, type MarkdownTheme, type Token } from "@earendil-works/pi-tui";
 import { installCopyButtons } from "../extensions/open-tui/copy-buttons.ts";
 import {
 	installMarkdownSkin,
@@ -15,6 +15,11 @@ const theme = {
 	bg: (color: string, text: string) => `<bg:${color}>${text}</bg:${color}>`,
 	bold: (text: string) => `<b>${text}</b>`,
 	style: (text: string) => `<styled>${text}</styled>`,
+} as unknown as Theme;
+
+/** Tag-free painter: `visibleWidth` then measures terminal columns instead of the mock's markers. */
+const plainTheme = {
+	fg: (_color: string, text: string) => text,
 } as unknown as Theme;
 
 const markdownTheme: MarkdownTheme = {
@@ -35,7 +40,7 @@ const markdownTheme: MarkdownTheme = {
 };
 
 function config(overrides: Partial<ThemeConfig> = {}): ThemeConfig {
-	return { preset: "pi", slots: {}, dividers: "line", gutter: false, banding: false, ...overrides };
+	return { preset: "pi", slots: {}, dividers: "line", gutter: false, banding: false, userBar: true, ...overrides };
 }
 
 let current: ThemeConfig = config();
@@ -169,6 +174,75 @@ test("the rule is capped at 80 columns like Pi's own hr", () => {
 		current = config({ dividers: "dashed" });
 		const [row] = rule(markdownInstance(), 200);
 		assert.equal(row, `<dim>${"╌".repeat(80)}</dim>`);
+	} finally {
+		cleanup?.();
+		current = config();
+	}
+});
+
+/** The rail reads the `userBar` slot; with `preset: "pi"` it falls back to the `accent` token. */
+const RAIL = "<accent>▌</accent> ";
+
+const userMessage = (text = "hello\n\n```js\nx()\n```") => new UserMessageComponent(text);
+
+test("the user rail prefixes every rendered row and never reaches the copy payload", () => {
+	initTheme();
+	current = config({ userBar: true });
+	const cleanup = startSkin();
+	try {
+		const component = userMessage();
+		const lines = component.render(40);
+		assert.ok(lines.length >= 2);
+		// Every row, including the OSC 133 zone-marker rows: the rail sits outside them.
+		for (const line of lines) assert.ok(line.startsWith(RAIL), line);
+		// The copy payload is the untouched source markdown, so `[Copy]` sends the message, not the rail.
+		const text = (component as unknown as { text: string }).text;
+		assert.equal(text, "hello\n\n```js\nx()\n```");
+		assert.ok(!text.includes("▌"));
+	} finally {
+		cleanup?.();
+		current = config();
+	}
+});
+
+test("userBar: false keeps the v0.4.6 bubble byte for byte", () => {
+	initTheme();
+	const baseline = userMessage().render(40);
+	current = config({ userBar: false });
+	const cleanup = startSkin();
+	try {
+		assert.deepEqual(userMessage().render(40), baseline);
+		assert.ok(new UserMessageComponent("hello").render(40).every((line) => !line.includes("▌")));
+	} finally {
+		cleanup?.();
+		current = config();
+	}
+});
+
+test("the rail comes out of the width budget instead of widening the row", () => {
+	initTheme();
+	current = config({ userBar: true });
+	const cleanup = installMarkdownSkin({ theme: () => plainTheme, config: () => current });
+	try {
+		// Pi pads the bubble to the width it is handed: a padded row still lands exactly on the budget
+		// (38 rendered columns plus the two rail columns) instead of overflowing by two.
+		for (const line of userMessage().render(40)) assert.equal(visibleWidth(line), 40);
+		// Narrow terminals still fit, down to where the rail itself is dropped for lack of columns.
+		for (const width of [21, 12, 5]) {
+			for (const line of userMessage().render(width)) {
+				assert.ok(visibleWidth(line) <= width, `${visibleWidth(line)} > ${width}`);
+			}
+		}
+		// Below five columns Pi's own rows overflow the budget, so the rail is dropped instead of adding
+		// two more columns to them: the plain render is kept byte for byte.
+		current = config({ userBar: false });
+		for (const width of [4, 3, 2]) {
+			const plain = userMessage().render(width);
+			assert.ok(plain.every((line) => !line.includes("▌")));
+			current = config({ userBar: true });
+			assert.deepEqual(userMessage().render(width), plain);
+			current = config({ userBar: false });
+		}
 	} finally {
 		cleanup?.();
 		current = config();

@@ -466,7 +466,7 @@ function formatElapsed(ms: number): string {
 /** No skin configured: Pi's own tokens, epoch 0, which is exactly the v0.4.6 behaviour. */
 const piSkin: SkinProvider = createSkinProvider(() => PI_THEME_CONFIG, () => 0);
 /** No theme config supplied: no gutter, no banding, no dividers — the v0.4.6 rows. */
-const plainThemeConfig: ThemeConfig = { preset: "pi", slots: {}, dividers: "none", gutter: false, banding: false };
+const plainThemeConfig: ThemeConfig = { preset: "pi", slots: {}, dividers: "none", gutter: false, banding: false, userBar: false };
 
 function lines(
 	build: (width: number, icons: IconGlyphs, painter: Painter) => string[],

@@ -132,6 +132,7 @@ export const DEFAULT_CONFIG: OpenTuiConfig = {
 		dividers: "line",
 		gutter: true,
 		banding: false,
+		userBar: true,
 		expandHint: DEFAULT_EXPAND_HINT,
 	},
 };
@@ -191,6 +192,7 @@ function normalizeTheme(value: unknown): ThemeConfig {
 		slots,
 		gutter: typeof source.gutter === "boolean" ? source.gutter : DEFAULT_CONFIG.theme.gutter,
 		banding: typeof source.banding === "boolean" ? source.banding : DEFAULT_CONFIG.theme.banding,
+		userBar: typeof source.userBar === "boolean" ? source.userBar : DEFAULT_CONFIG.theme.userBar,
 		expandHint,
 	};
 }

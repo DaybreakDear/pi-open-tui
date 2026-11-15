@@ -18,7 +18,7 @@ import {
 import { createCompactRenderers } from "../extensions/open-tui/tool-view.ts";
 import { preserveEnvironment, temporaryDirectory } from "./fixtures/test-helpers.ts";
 
-const piThemeConfig: ThemeConfig = { preset: "pi", slots: {}, dividers: "line", gutter: true, banding: false };
+const piThemeConfig: ThemeConfig = { preset: "pi", slots: {}, dividers: "line", gutter: true, banding: false, userBar: false };
 
 interface Recorded {
 	color: string;
@@ -51,7 +51,7 @@ function recordingTheme() {
 }
 
 test("slots beat the preset", () => {
-	const cfg: ThemeConfig = { preset: "tokyo-night", slots: { thinking: "#ff0000" }, dividers: "line", gutter: true, banding: false };
+	const cfg: ThemeConfig = { preset: "tokyo-night", slots: { thinking: "#ff0000" }, dividers: "line", gutter: true, banding: false, userBar: false };
 	assert.equal(resolveSlotColor(cfg, "thinking"), "#ff0000");
 	assert.equal(resolveSlotColor(cfg, "toolCall"), "#bb9af7", "the preset's own palette colour");
 });
@@ -142,7 +142,7 @@ test("a call-site fallback token only applies when no slot value resolves", () =
 });
 
 test("tool rows pick the slot by state, so a preset cannot swallow the status colour", () => {
-	const tokyoNight: ThemeConfig = { preset: "tokyo-night", slots: {}, dividers: "line", gutter: true, banding: false };
+	const tokyoNight: ThemeConfig = { preset: "tokyo-night", slots: {}, dividers: "line", gutter: true, banding: false, userBar: false };
 	const skin = createSkinProvider(() => tokyoNight, () => 0);
 	const row = createCompactRenderers("read", undefined, () => resolveGlyphs("ascii"), undefined, false, undefined, skin);
 	const { theme, fgCalls, styleCalls } = recordingTheme();
@@ -209,7 +209,7 @@ function callContext(overrides: Partial<RenderCallContext> = {}): RenderCallCont
 
 test("the skin epoch busts the tool view's rendered-row cache", () => {
 	let epoch = 0;
-	let cfg: ThemeConfig = { preset: "pi", slots: {}, dividers: "line", gutter: true, banding: false };
+	let cfg: ThemeConfig = { preset: "pi", slots: {}, dividers: "line", gutter: true, banding: false, userBar: false };
 	const skin = createSkinProvider(() => cfg, () => epoch);
 	const { theme, fgCalls } = recordingTheme();
 	const row = createCompactRenderers("read", undefined, () => resolveGlyphs("unicode"), undefined, false, undefined, skin);
@@ -236,7 +236,7 @@ test("the skin epoch busts the tool view's rendered-row cache", () => {
 	const callsAfterFirst = fgCalls.length;
 	assert.deepEqual(component.render(80), piRows, "an unchanged skin reuses the cached rows");
 	assert.equal(fgCalls.length, callsAfterFirst, "the cached render paints nothing again");
-	cfg = { preset: "tokyo-night", slots: {}, dividers: "line", gutter: true, banding: false };
+	cfg = { preset: "tokyo-night", slots: {}, dividers: "line", gutter: true, banding: false, userBar: false };
 	epoch += 1;
 	const themed = component.render(80);
 	assert.notDeepEqual(themed, piRows, "the epoch bump rebuilds the row instead of reusing it");

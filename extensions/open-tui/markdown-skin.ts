@@ -1,5 +1,5 @@
-import type { MarkdownTransformContext, Theme } from "@earendil-works/pi-coding-agent";
-import { Markdown, type MarkdownTheme, type Token } from "@earendil-works/pi-tui";
+import { UserMessageComponent, type MarkdownTransformContext, type Theme } from "@earendil-works/pi-coding-agent";
+import { Markdown, visibleWidth, type MarkdownTheme, type Token } from "@earendil-works/pi-tui";
 import { createPainter, type ThemeConfig } from "./theme.ts";
 
 /**
@@ -14,11 +14,19 @@ const HR_MAX_WIDTH = 80;
 const LINE_GLYPH = "─";
 const DASHED_GLYPH = "╌";
 const DIVIDER_TEXT = "---";
+/** `▌` plus its column gap: the rail is prepended outside the width Pi budgeted for the text. */
+const USER_BAR_GLYPH = "▌";
+const USER_BAR_COLUMNS = 2;
 
 /** Pi's private `Markdown` fields; checked at runtime because they can change between releases. */
 interface MarkdownInternals {
 	theme: MarkdownTheme;
 	renderToken(token: Token, width: number, nextTokenType?: string, styleContext?: unknown): string[];
+}
+
+/** Only `render` is wrapped; `text`, the copy payload, is deliberately left alone. */
+interface UserMessageInternals {
+	render(width: number): string[];
 }
 
 /**
@@ -85,9 +93,33 @@ export function installMarkdownSkin(next: MarkdownSkinSource): (() => void) | un
 	markdownProto.renderToken = patched;
 	markdownProto[PATCH_KEY] = true;
 
+	// The rail is prepended to the rendered rows, so `UserMessageComponent.text` (the copy payload)
+	// keeps the original markdown and the bubble `[Copy]` button copies the message, not the glyph.
+	const userProto = UserMessageComponent.prototype as unknown as UserMessageInternals;
+	const originalUserRender = userProto.render;
+	let patchedUserRender: ((this: UserMessageInternals, width: number) => string[]) | undefined;
+	if (typeof originalUserRender === "function") {
+		patchedUserRender = function (this: UserMessageInternals, width: number): string[] {
+			const current = source;
+			// Pi pads its bubble to the width it is handed, so the two rail columns come out of the
+			// budget instead of widening the row past the terminal.
+			const budget = width - USER_BAR_COLUMNS;
+			if (!current || !current.config().userBar || budget < 1) return originalUserRender.call(this, width);
+			const rows = originalUserRender.call(this, budget);
+			// Very narrow terminals make Pi's own renderer overflow its budget (fences keep a minimum
+			// width); the rail is dropped rather than adding two more columns to an already broken row.
+			if (rows.some((line) => visibleWidth(line) > budget)) return originalUserRender.call(this, width);
+			const painter = createPainter(current.theme(), current.config());
+			const rail = `${painter.paint("userBar", USER_BAR_GLYPH)} `;
+			return rows.map((line) => `${rail}${line}`);
+		};
+		userProto.render = patchedUserRender;
+	}
+
 	return () => {
 		// Another extension may have wrapped ours; leave its wrapper in place then.
 		if (markdownProto.renderToken === patched) markdownProto.renderToken = originalRenderToken;
+		if (patchedUserRender !== undefined && userProto.render === patchedUserRender) userProto.render = originalUserRender;
 		delete markdownProto[PATCH_KEY];
 		source = undefined;
 		firstUserText = undefined;

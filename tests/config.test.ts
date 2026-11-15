@@ -96,6 +96,7 @@ const DEFAULT_THEME = {
 	dividers: "line" as const,
 	gutter: true,
 	banding: false,
+	userBar: true,
 	expandHint: "plain" as const,
 };
 
@@ -115,6 +116,7 @@ test("keeps a valid theme block", (t) => {
 		dividers: "dashed",
 		gutter: false,
 		banding: true,
+		userBar: true,
 		expandHint: "plain",
 	});
 });

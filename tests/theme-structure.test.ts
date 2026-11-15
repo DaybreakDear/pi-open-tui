@@ -45,7 +45,7 @@ function context(overrides: Partial<RenderContext> = {}): RenderContext {
 	};
 }
 
-const NEUTRAL: ThemeConfig = { preset: "pi", slots: {}, dividers: "none", gutter: false, banding: false };
+const NEUTRAL: ThemeConfig = { preset: "pi", slots: {}, dividers: "none", gutter: false, banding: false, userBar: false };
 
 /** One collapsed `tool_search` row: the summary line plus one body line of loaded tool names. */
 function searchRows(cfg?: () => ThemeConfig): string[] {

@@ -37,6 +37,11 @@ export interface ThemeConfig {
 	dividers: DividerStyle;
 	gutter: boolean;
 	banding: boolean;
+	/**
+	 * Left rail (`▌ `) on user messages. It is prepended at render time, so the message text — the
+	 * `[Copy]` payload — never contains the glyph. `false` keeps the v0.4.6 bubble.
+	 */
+	userBar: boolean;
 	/** Absent behaves like `"plain"`, so a literal without the key renders the v0.4.6 hint. */
 	expandHint?: ExpandHint;
 }
@@ -136,7 +141,7 @@ export const PRESET_SLOTS: Record<Exclude<ThemePreset, "pi">, Partial<Record<Slo
 };
 
 /** Used when no theme block is configured: identical to `preset: "pi"`. */
-export const PI_THEME_CONFIG: ThemeConfig = { preset: "pi", slots: {}, dividers: "line", gutter: true, banding: false };
+export const PI_THEME_CONFIG: ThemeConfig = { preset: "pi", slots: {}, dividers: "line", gutter: true, banding: false, userBar: true };
 
 /** Slot overrides win over the preset; `pi` contributes no preset colours. */
 export function resolveSlotColor(cfg: ThemeConfig, slot: SlotName): SlotValue | undefined {
