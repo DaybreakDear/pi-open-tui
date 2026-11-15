@@ -1041,6 +1041,25 @@ test("footer renders the session cost through the currency formatter", () => {
 	assert.equal(output.match(/\$/g)?.length, 1, `expected a single currency symbol\n${output}`);
 });
 
+test("footer renders the cost in the configured currency", () => {
+	const entries = [{
+		id: "usage-cny",
+		timestamp: Date.now(),
+		type: "message",
+		message: {
+			role: "assistant",
+			usage: { input: 10, output: 4, cacheRead: 0, cacheWrite: 0, cost: { total: 0.0063 } },
+		},
+	}];
+	const { component, config } = footerFixture({ entries });
+	config.cost = { ...config.cost, currency: "cny", usdToCny: 7.15 };
+	const output = component.render(160).join("\n");
+
+	const cost = output.match(/(?:\$|\u00a5)\d+\.\d+/)?.[0];
+	assert.equal(cost, "\u00a50.045", `unexpected cost segment\n${output}`);
+	assert.equal(output.includes("$"), false, `usd symbol must not survive\n${output}`);
+});
+
 function renderFooterWithSession(opts: {
 	sessionName?: string | null;
 	mode?: "nerd" | "ascii";

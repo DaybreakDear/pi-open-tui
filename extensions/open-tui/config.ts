@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import type { CostConfig } from "./currency.ts";
+import { DEFAULT_COST } from "./currency.ts";
 import type { IconMode } from "./icons.ts";
 
 export type SettingsLanguage = "en" | "zh";
@@ -68,6 +70,8 @@ export interface OpenTuiConfig {
 	telemetry: TelemetryConfig;
 	thinkingPeek: ThinkingPeekConfig;
 	toolView: ToolViewConfig;
+	/** Currency and the manual USD→CNY rate used by the footer and telemetry. */
+	cost: CostConfig;
 }
 
 export const DEFAULT_CONFIG: OpenTuiConfig = {
@@ -115,6 +119,7 @@ export const DEFAULT_CONFIG: OpenTuiConfig = {
 		extensionTools: false,
 		exclude: [],
 	},
+	cost: DEFAULT_COST,
 };
 
 export function getConfigPath(): string {
@@ -138,6 +143,22 @@ function normalizeToolView(value: unknown): ToolViewConfig {
 }
 
 const ICON_MODES: IconMode[] = ["auto", "nerd", "unicode", "ascii"];
+
+/** Invalid currency, rate, or switch flag fall back to the defaults field by field. */
+function normalizeCost(value: unknown): CostConfig {
+	const source = typeof value === "object" && value !== null && !Array.isArray(value)
+		? (value as Partial<Record<keyof CostConfig, unknown>>)
+		: {};
+	const currency = source.currency === "usd" || source.currency === "cny"
+		? source.currency
+		: DEFAULT_COST.currency;
+	const rate = source.usdToCny;
+	const usdToCny = typeof rate === "number" && Number.isFinite(rate) && rate > 0
+		? rate
+		: DEFAULT_COST.usdToCny;
+	const switchable = typeof source.switchable === "boolean" ? source.switchable : DEFAULT_COST.switchable;
+	return { currency, usdToCny, switchable };
+}
 
 // Non-boolean flags (e.g. "false" strings) fall back to defaults instead of reading as truthy.
 function normalizeFlags<T extends object>(value: unknown, defaults: T): T {
@@ -223,6 +244,7 @@ export function loadConfig(notify?: (msg: string, level: "warning" | "info") => 
 			config.thinkingPeek.lines = normalizeThinkingPeekLines(config.thinkingPeek.lines);
 		}
 		config.toolView = normalizeToolView(config.toolView);
+		config.cost = normalizeCost(config.cost);
 		return config;
 	} catch (err) {
 		notify?.(`open-tui config parse error: ${err instanceof Error ? err.message : String(err)}`, "warning");

@@ -2,7 +2,7 @@ import type { ExtensionContext, Theme, ThemeColor } from "@earendil-works/pi-cod
 import { hostname as osHostname } from "node:os";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { OpenTuiConfig } from "./config.ts";
-import { DEFAULT_COST, formatCost, type CostConfig } from "./currency.ts";
+import { formatCost, type CostConfig } from "./currency.ts";
 import type { FooterBuiltinSegment, FooterPosition, RegisteredFooterSegment } from "./footer-segments.ts";
 import type { IconGlyphs } from "./icons.ts";
 import { resolveGlyphs, resolveIconMode, runtimeSymbol } from "./icons.ts";
@@ -519,7 +519,7 @@ function renderFooterContent(
 		modelParts.push(theme.fg(effortColor(meta.effort), `${glyphs.thinking} ${meta.effort}`));
 	}
 	const modelBlock = modelParts.join(theme.fg("dim", " · "));
-	const stats = renderStatsSegments(theme, totals, glyphs, segments, DEFAULT_COST);
+	const stats = renderStatsSegments(theme, totals, glyphs, segments, config.cost);
 	const statsBlock = [stats.tokens, stats.cost].filter(Boolean).join(` ${theme.fg("dim", "|")} `);
 	builtins.model = { text: modelBlock, priority: 0 };
 	builtins.tokens = { text: stats.tokens, priority: 2 };

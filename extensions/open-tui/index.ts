@@ -329,7 +329,7 @@ export default function (pi: ExtensionAPI) {
 	pi.on("agent_settled", (event, ctx) => {
 		const telemetry = turnTelemetry.handle(event);
 		if (telemetry && config.enabled && config.telemetry.enabled && isTuiContext(ctx)) {
-			const message = formatTurnTelemetry(telemetry, ctx.ui.theme, config.telemetry, config.icons.mode);
+			const message = formatTurnTelemetry(telemetry, ctx.ui.theme, config.telemetry, config.icons.mode, config.cost);
 			if (message) ctx.ui.notify(message, "info");
 		}
 		// Only clear the peek label when this task is still the current one.
