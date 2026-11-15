@@ -427,6 +427,7 @@ test("open-tui notifies once after a complete agent run", () => {
 		registerCommand() {},
 		registerToolRenderer() {},
 		registerMarkdownTransformer() {},
+		registerShortcut() {},
 		events: createEventBus(),
 		getThinkingLevel: () => "off",
 	} as unknown as ExtensionAPI;
@@ -488,6 +489,7 @@ test("open-tui keeps a bounded peek scoped to the current assistant", async () =
 		registerCommand() {},
 		registerToolRenderer() {},
 		registerMarkdownTransformer() {},
+		registerShortcut() {},
 		events: createEventBus(),
 		getThinkingLevel: () => "high",
 	} as unknown as ExtensionAPI;

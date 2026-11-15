@@ -15,6 +15,7 @@ import {
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 import type { CursorStyle, IconMode, OpenTuiConfig, SettingsLanguage, ThinkingPeekLines } from "./config.ts";
+import { DEFAULT_COST } from "./currency.ts";
 
 interface SettingItem {
 	id: string;
@@ -85,6 +86,8 @@ const COPY = {
 			tokenCounts: "Run tokens",
 			stallDetails: "Stall details",
 			costRate: "Price per 1M tokens",
+			currency: "Currency",
+			usdToCny: "USD→CNY rate",
 		},
 		values: {
 			on: "On",
@@ -94,6 +97,10 @@ const COPY = {
 			languages: { en: "English", zh: "简体中文" },
 			cursorStyles: { block: "Block", bar: "Bar", underline: "Underline" },
 			icons: { auto: "Auto", nerd: "Nerd", unicode: "Unicode", ascii: "ASCII" },
+			currencies: { usd: "USD $", cny: "CNY ¥" },
+		},
+		notices: {
+			currencyLocked: "Currency switching is disabled. Enable it in open-tui settings.",
 		},
 	},
 	zh: {
@@ -145,6 +152,8 @@ const COPY = {
 			tokenCounts: "单次运行 Token",
 			stallDetails: "停顿详情",
 			costRate: "每百万 Token 单价",
+			currency: "货币",
+			usdToCny: "汇率（USD→CNY）",
 		},
 		values: {
 			on: "开启",
@@ -154,11 +163,19 @@ const COPY = {
 			languages: { en: "English", zh: "简体中文" },
 			cursorStyles: { block: "块", bar: "竖线", underline: "下划线" },
 			icons: { auto: "自动", nerd: "Nerd", unicode: "Unicode", ascii: "ASCII" },
+			currencies: { usd: "美元 $", cny: "人民币 ¥" },
+		},
+		notices: {
+			currencyLocked: "货币切换已关闭。可在 open-tui 设置中开启。",
 		},
 	},
 } as const;
 
-type SettingsCopy = (typeof COPY)[SettingsLanguage];
+export type SettingsCopy = (typeof COPY)[SettingsLanguage];
+
+export function settingsCopy(language: SettingsLanguage): SettingsCopy {
+	return COPY[language];
+}
 
 function formatThinkingPeekLines(lines: ThinkingPeekLines, copy: SettingsCopy): string {
 	const values = [copy.values.thinkingPeek.off, copy.values.thinkingPeek.one, copy.values.thinkingPeek.two];
@@ -244,6 +261,14 @@ function buildFeaturesItems(config: OpenTuiConfig, copy: SettingsCopy): SettingG
 	];
 }
 
+/** Fixed ladder instead of a numeric field: the settings list only offers items, not inputs. */
+const RATE_STEPS = [6.8, 7.0, 7.15, 7.3, 7.5] as const;
+
+function nextRateStep(current: number): number {
+	const index = RATE_STEPS.findIndex((step) => step === current);
+	return RATE_STEPS[(index + 1) % RATE_STEPS.length] ?? DEFAULT_COST.usdToCny;
+}
+
 function buildIconsItems(config: OpenTuiConfig, copy: SettingsCopy): SettingGroup[] {
 	return [
 		{
@@ -252,7 +277,11 @@ function buildIconsItems(config: OpenTuiConfig, copy: SettingsCopy): SettingGrou
 		},
 		{
 			label: copy.sections.editor,
-			items: [{ id: "cursorStyle", label: copy.labels.cursorStyle, currentValue: copy.values.cursorStyles[config.cursorStyle] }],
+			items: [
+				{ id: "cursorStyle", label: copy.labels.cursorStyle, currentValue: copy.values.cursorStyles[config.cursorStyle] },
+				{ id: "currency", label: copy.labels.currency, currentValue: copy.values.currencies[config.cost.currency] },
+				{ id: "usdToCny", label: copy.labels.usdToCny, currentValue: String(config.cost.usdToCny) },
+			],
 		},
 	];
 }
@@ -363,6 +392,12 @@ function handleSettingChange(
 	if (tab === "icons") {
 		if (itemId === "mode") return cycleIconMode(config);
 		if (itemId === "cursorStyle") return cycleCursorStyle(config);
+		if (itemId === "currency") {
+			return { ...config, cost: { ...config.cost, currency: config.cost.currency === "usd" ? "cny" : "usd" } };
+		}
+		if (itemId === "usdToCny") {
+			return { ...config, cost: { ...config.cost, usdToCny: nextRateStep(config.cost.usdToCny) } };
+		}
 	}
 	if (tab === "segments") {
 		return toggleSetting(config, itemId as keyof OpenTuiConfig["footerSegments"]);

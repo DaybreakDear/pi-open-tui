@@ -9,7 +9,7 @@ import { emptyGitStatus } from "./git.ts";
 import { GitStatusRefresher } from "./git-refresh.ts";
 import { readRuntimeInfo } from "./runtime.ts";
 import { SessionLifecycle } from "./session-lifecycle.ts";
-import { registerSettingsCommand } from "./settings-command.ts";
+import { registerSettingsCommand, settingsCopy } from "./settings-command.ts";
 import { formatTurnTelemetry, TurnTelemetryTracker } from "./telemetry.ts";
 import { registerToolView } from "./tool-view.ts";
 import {
@@ -395,6 +395,16 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerMarkdownTransformer(markCopyScope);
 
+	// Save first so the in-memory config and the session agree only after the write.
+	const persistConfig = (nextConfig: OpenTuiConfig): void => {
+		if (!saveConfig(nextConfig)) {
+			lastCtx?.ui.notify(nextConfig.settingsLanguage === "zh"
+				? "open-tui 设置本次生效，但未保存到磁盘。请检查配置目录权限和可用空间。"
+				: "open-tui settings apply for this session but could not be saved. Check configuration directory permissions and free space.", "warning");
+		}
+		config = nextConfig;
+	};
+
 	registerSettingsCommand(pi, {
 		getConfig: () => config,
 		onConfigChanged: (newConfig) => {
@@ -402,12 +412,7 @@ export default function (pi: ExtensionAPI) {
 			const headerChanged = config.header !== newConfig.header;
 			const copyButtonsChanged = config.copyButtons !== newConfig.copyButtons;
 			const thinkingPeekLinesChanged = config.thinkingPeek.lines !== newConfig.thinkingPeek.lines;
-			if (!saveConfig(newConfig)) {
-				lastCtx?.ui.notify(newConfig.settingsLanguage === "zh"
-					? "open-tui 设置本次生效，但未保存到磁盘。请检查配置目录权限和可用空间。"
-					: "open-tui settings apply for this session but could not be saved. Check configuration directory permissions and free space.", "warning");
-			}
-			config = newConfig;
+			persistConfig(newConfig);
 			if (newConfig.thinkingPeek.lines === 0 || !newConfig.enabled) {
 				resetPeek();
 				clearPeekLabel(lastCtx);
@@ -444,6 +449,22 @@ export default function (pi: ExtensionAPI) {
 				applyUi(lastCtx);
 				scheduleGitRefresh(lastCtx, true);
 			}
+		},
+	});
+
+	pi.registerShortcut("ctrl+shift+m", {
+		description: "Toggle currency (USD/CNY)",
+		handler: (ctx: ExtensionContext) => {
+			const copy = settingsCopy(config.settingsLanguage);
+			if (!config.cost.switchable) {
+				ctx.ui.notify(copy.notices.currencyLocked, "info");
+				return;
+			}
+			persistConfig({
+				...config,
+				cost: { ...config.cost, currency: config.cost.currency === "usd" ? "cny" : "usd" },
+			});
+			requestFooterRender?.();
 		},
 	});
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import { createEventBus, type ExtensionAPI, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth, type Component, type KeybindingsManager, type TUI } from "@earendil-works/pi-tui";
 import { DEFAULT_CONFIG, loadConfig, saveConfig, type OpenTuiConfig } from "../extensions/open-tui/config.ts";
@@ -334,6 +334,7 @@ test("toggles the header without resetting a disabled slot and warns when persis
 		registerCommand: (_name: string, options: { handler: typeof command }) => (command = options.handler),
 		registerToolRenderer() {},
 		registerMarkdownTransformer() {},
+		registerShortcut() {},
 	} as unknown as ExtensionAPI;
 	const ctx = {
 		hasUI: true,
@@ -512,4 +513,107 @@ test("cycles the thinking peek line count from General settings", async () => {
 	settings.component.handleInput("\r");
 	assert.equal(settings.getConfig().thinkingPeek.lines, 1);
 	settings.component.handleInput("q");
+});
+
+// Currency settings and the ctrl+shift+m shortcut.
+test("cycles the display currency from the Appearance tab", async () => {
+	const settings = await openSettings();
+	settings.component.handleInput("\t");
+	// Appearance → Icon mode → Cursor style → Currency
+	settings.press("\x1b[B", 2);
+	assert.match(selectedLine(settings.component), /Currency/);
+	assert.match(selectedLine(settings.component), /USD \$/);
+
+	settings.component.handleInput("\r");
+	assert.equal(settings.getConfig().cost.currency, "cny");
+	assert.match(selectedLine(settings.component), /CNY ¥/);
+
+	settings.component.handleInput("\r");
+	assert.equal(settings.getConfig().cost.currency, "usd");
+	assert.match(selectedLine(settings.component), /USD \$/);
+
+	settings.component.handleInput("q");
+	await settings.waitForClose();
+});
+
+test("steps the manual USD to CNY rate through a fixed ladder", async () => {
+	const config = structuredClone(DEFAULT_CONFIG);
+	config.cost = { ...config.cost, currency: "cny" };
+	const settings = await openSettings(config);
+	settings.component.handleInput("\t");
+	settings.press("\x1b[B", 3);
+	assert.match(selectedLine(settings.component), /USD→CNY rate/);
+	assert.match(selectedLine(settings.component), /7\.15/);
+
+	const rates: number[] = [];
+	for (let index = 0; index < 5; index++) {
+		settings.component.handleInput("\r");
+		rates.push(settings.getConfig().cost.usdToCny);
+	}
+	assert.deepEqual(rates, [7.3, 7.5, 6.8, 7.0, 7.15]);
+	assert.equal(settings.getConfig().cost.currency, "cny", "changing the rate must not change the currency");
+
+	settings.component.handleInput("q");
+	await settings.waitForClose();
+});
+
+function shortcutHost(t: TestContext, raw: Partial<OpenTuiConfig>) {
+	const agentDir = temporaryDirectory(t, "pi-open-tui-shortcut-");
+	preserveEnvironment(t, ["PI_CODING_AGENT_DIR"]);
+	process.env.PI_CODING_AGENT_DIR = agentDir;
+	writeFileSync(join(agentDir, "open-tui.json"), JSON.stringify({ ...DEFAULT_CONFIG, ...raw }));
+	const handlers = new Map<string, (event: unknown, ctx: ExtensionContext) => unknown>();
+	let shortcut: { description?: string; handler: (ctx: ExtensionContext) => void } | undefined;
+	const notifications: Array<{ message: string; level: string }> = [];
+	const pi = {
+		on: (event: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => handlers.set(event, handler),
+		events: createEventBus(),
+		registerCommand() {},
+		registerShortcut: (key: string, options: { description?: string; handler: (ctx: ExtensionContext) => void }) => {
+			if (key === "ctrl+shift+m") shortcut = options;
+		},
+		registerToolRenderer() {},
+		registerMarkdownTransformer() {},
+	} as unknown as ExtensionAPI;
+	const ctx = {
+		hasUI: true,
+		mode: "tui",
+		cwd: process.cwd(),
+		ui: {
+			setFooter() {},
+			setHeader() {},
+			getEditorComponent: () => undefined,
+			setEditorComponent() {},
+			notify: (message: string, level: string) => notifications.push({ message, level }),
+			custom: () => undefined,
+		},
+	} as unknown as ExtensionContext;
+	openTui(pi);
+	handlers.get("session_start")?.({ type: "session_start" }, ctx);
+	return { shortcut: () => shortcut, notifications, ctx };
+}
+
+test("ctrl+shift+m toggles the currency and persists it", (t) => {
+	const host = shortcutHost(t, {});
+	const shortcut = host.shortcut();
+	assert.ok(shortcut, "ctrl+shift+m must be registered");
+	assert.equal(shortcut.description, "Toggle currency (USD/CNY)");
+
+	shortcut.handler(host.ctx);
+	assert.equal(loadConfig().cost.currency, "cny");
+	shortcut.handler(host.ctx);
+	assert.equal(loadConfig().cost.currency, "usd");
+	assert.equal(host.notifications.length, 0);
+});
+
+test("ctrl+shift+m is inert when switching is disabled", (t) => {
+	const host = shortcutHost(t, { cost: { currency: "usd", usdToCny: 7.15, switchable: false } });
+	const shortcut = host.shortcut();
+	assert.ok(shortcut);
+
+	shortcut.handler(host.ctx);
+	assert.equal(loadConfig().cost.currency, "usd");
+	assert.equal(host.notifications.length, 1);
+	assert.equal(host.notifications[0]?.level, "info");
+	assert.match(host.notifications[0]?.message ?? "", /disabled/i);
 });
