@@ -80,9 +80,21 @@ All keys below are booleans inside `telemetry` and default to `true`.
 | `duration` | Full agent-run duration |
 | `tokens` | Assistant input/output counts for measured turns |
 | `stalls` | Stream pauses, shown only when detected |
-| `cost` | Effective dollar rate per million reported tokens |
+| `cost` | Effective rate per million reported tokens, in `cost.currency` |
 
 The footer's live-speed estimate has its own `footerSegments.liveTps` switch. See [usage and telemetry](./implementation.md#usage-and-telemetry) for measurement definitions and limitations.
+
+### Cost options
+
+Both the footer total and the telemetry rate are formatted by a single formatter, so exactly one currency symbol is printed.
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `cost.currency` | `"usd"` | Display currency. `usd` prints `$`, `cny` prints `¥` |
+| `cost.usdToCny` | `7.15` | Manual USD→CNY rate used when `currency` is `cny`. Values outside `0.01`–`1000` fall back to the default |
+| `cost.switchable` | `true` | Allow `ctrl+shift+m` and the settings dialog to toggle the currency. Set to `false` to lock it |
+
+The rate is a fixed, manually entered number — pi-open-tui does not fetch exchange rates. Amounts at or above 0.1 in the display currency use two decimals, smaller amounts use three. A session whose cost rounds below `0.001` shows `$0.000`; negative provider figures are clamped to zero. See [usage and telemetry](./implementation.md#usage-and-telemetry).
 
 ### Icons
 
@@ -175,9 +187,21 @@ Tab/Shift+Tab 或 ←/→ 切页，↑/↓ 或 Page Up/Page Down 移动，Enter/
 | `duration` | Agent 完整运行耗时 |
 | `tokens` | 被统计轮次的助手输入/输出数量 |
 | `stalls` | 流式输出停顿，仅检测到时显示 |
-| `cost` | 每百万报告 Token 的综合美元费率 |
+| `cost` | 每百万报告 Token 的综合费率，货币由 `cost.currency` 决定 |
 
 底栏实时速度使用独立的 `footerSegments.liveTps` 开关。指标定义和限制见[用量与遥测](./implementation.md#用量与遥测)。
+
+### 费用选项
+
+底栏累计费用与遥测费率由同一个格式化器输出，因此货币符号只会出现一次。
+
+| 键 | 默认值 | 作用 |
+| --- | --- | --- |
+| `cost.currency` | `"usd"` | 显示货币。`usd` 显示 `$`，`cny` 显示 `¥` |
+| `cost.usdToCny` | `7.15` | `currency` 为 `cny` 时使用的**手动**美元兑人民币汇率。超出 `0.01`–`1000` 的值回退为默认值 |
+| `cost.switchable` | `true` | 允许用 `ctrl+shift+m` 或设置窗口切换货币。设为 `false` 可锁定 |
+
+汇率是不自动更新的固定值，pi-open-tui 不会联网抓取行情。显示货币下不低于 0.1 的金额保留两位小数，更小的金额保留三位；四舍五入后低于 `0.001` 的会话显示 `$0.000`，服务商报告的负数计为 0。详见[用量与遥测](./implementation.md#用量与遥测)。
 
 ### 图标
 
@@ -235,6 +259,11 @@ The complete default configuration is shared by both language references. Set `s
     "tokens": true,
     "stalls": true,
     "cost": true
+  },
+  "cost": {
+    "currency": "usd",
+    "usdToCny": 7.15,
+    "switchable": true
   },
   "thinkingPeek": {
     "lines": 1

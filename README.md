@@ -99,10 +99,10 @@ Enable **Footer in editor border** to move the two main rows into the editor's t
 After each complete agent run, pi-open-tui shows one transient result, combining its assistant turns:
 
 ```text
-> TPS 42.5 tok/s | ~ TTFT 1.2s | + 29.7s | ↑ 567 | ↓ 1.2k | ! stall 1x / 4.3s | $ $3.60/M
+> TPS 42.5 tok/s | ~ TTFT 1.2s | + 29.7s | ↑ 567 | ↓ 1.2k | ! stall 1x / 4.3s | $3.60/M
 ```
 
-TPS measures provider-reported output tokens over generation time, including waiting and stalls but excluding tool execution between turns. The working timer also shows an estimated live speed such as `~54 tok/s` during streaming. The `$ / M` field is the effective rate per million tokens for the run; the footer shows cumulative session cost.
+TPS measures provider-reported output tokens over generation time, including waiting and stalls but excluding tool execution between turns. The working timer also shows an estimated live speed such as `~54 tok/s` during streaming. The cost field is the effective rate per million tokens for the run; the footer shows cumulative session cost. Both use the currency set by `cost.currency` (`$` or `¥`) and print the symbol once — press `ctrl+shift+m` to toggle when `cost.switchable` is on. See [cost options](./docs/configuration.md#cost-options).
 
 Toggle notification fields under **Telemetry → Measurements**, or live speed under **Footer → Runtime → Live TPS**. See [measurement definitions](./docs/implementation.md#usage-and-telemetry) for formulas, timing boundaries, and cache accounting.
 

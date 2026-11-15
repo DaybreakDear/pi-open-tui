@@ -99,10 +99,10 @@ mkdir -p ~/.pi/agent/themes && cp themes/*.json ~/.pi/agent/themes/ && /theme to
 每次 Agent 完整运行结束后，pi-open-tui 会合并其中的助手轮次，显示一条临时结果：
 
 ```text
-> TPS 42.5 tok/s | ~ TTFT 1.2s | + 29.7s | ↑ 567 | ↓ 1.2k | ! stall 1x / 4.3s | $ $3.60/M
+> TPS 42.5 tok/s | ~ TTFT 1.2s | + 29.7s | ↑ 567 | ↓ 1.2k | ! stall 1x / 4.3s | $3.60/M
 ```
 
-TPS 用服务商报告的输出 Token 除以生成时间，包含等待和停顿，不包含轮次之间的工具执行时间。流式输出期间，工作计时器还会显示 `~54 tok/s` 这样的实时估算速度。`$ / M` 表示本次运行每百万 Token 的综合费率，底栏则显示会话累计费用。
+TPS 用服务商报告的输出 Token 除以生成时间，包含等待和停顿，不包含轮次之间的工具执行时间。流式输出期间，工作计时器还会显示 `~54 tok/s` 这样的实时估算速度。费用字段表示本次运行每百万 Token 的综合费率，底栏则显示会话累计费用。两者都按 `cost.currency` 指定的货币（`$` 或 `¥`）渲染且只输出一次符号；`cost.switchable` 开启时可按 `ctrl+shift+m` 切换。见[费用选项](./docs/configuration.md#费用选项)。
 
 可在**遥测 → 测量指标**中开关通知字段，在**底栏 → 运行环境 → 实时 TPS**中控制实时速度。计算公式、计时边界和缓存统计见[指标定义](./docs/implementation.md#用量与遥测)。
 
