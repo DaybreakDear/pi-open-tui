@@ -187,17 +187,15 @@ function normalizeTheme(value: unknown): ThemeConfig {
 	};
 }
 
-/** Invalid currency, rate, or switch flag fall back to the defaults field by field. */
+/** Invalid currency, rate, or switch flag fall back field by field; unknown sibling keys survive. */
 function normalizeCost(value: unknown): CostConfig {
-	const source = typeof value === "object" && value !== null && !Array.isArray(value)
-		? (value as Partial<Record<keyof CostConfig, unknown>>)
-		: {};
+	const source = isRecord(value) ? value : {};
 	const currency = source.currency === "usd" || source.currency === "cny"
 		? source.currency
 		: DEFAULT_COST.currency;
 	const usdToCny = clampUsdToCny(source.usdToCny);
 	const switchable = typeof source.switchable === "boolean" ? source.switchable : DEFAULT_COST.switchable;
-	return { currency, usdToCny, switchable };
+	return { ...source, currency, usdToCny, switchable };
 }
 
 // Non-boolean flags (e.g. "false" strings) fall back to defaults instead of reading as truthy.

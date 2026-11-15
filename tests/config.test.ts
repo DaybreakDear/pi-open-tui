@@ -134,3 +134,12 @@ test("an unknown key inside the theme block survives", (t) => {
 	assert.equal((config.theme as unknown as Record<string, unknown>).expandHint, "off");
 	assert.equal(config.theme.preset, "pi");
 });
+
+test("an unknown key inside the cost block survives", (t) => {
+	// The settings dialog writes the loaded object back, so a dropped sibling key is deleted on save.
+	const config = configWith(t, { cost: { currency: "cny", usdToCny: 7.4, switchable: false, rounding: "ceil" } });
+	assert.equal((config.cost as unknown as Record<string, unknown>).rounding, "ceil");
+	assert.equal(config.cost.currency, "cny");
+	assert.equal(config.cost.usdToCny, 7.4);
+	assert.equal(config.cost.switchable, false);
+});
