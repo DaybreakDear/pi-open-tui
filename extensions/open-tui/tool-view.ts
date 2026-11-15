@@ -3,8 +3,9 @@ import { isAbsolute, relative, sep } from "node:path";
 import type { ExtensionAPI, SourceInfo, Theme, ThemeColor, ToolRenderers } from "@earendil-works/pi-coding-agent";
 import { Box, type Component, getCapabilities, getImageDimensions, imageFallback, Spacer, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { ToolViewConfig } from "./config.ts";
+import { formatExpandHint } from "./hint.ts";
 import type { IconGlyphs } from "./icons.ts";
-import { PI_THEME_CONFIG, createSkinProvider, type Painter, type SkinProvider, type ThemeConfig } from "./theme.ts";
+import { PI_THEME_CONFIG, createSkinProvider, type ExpandHint, type Painter, type SkinProvider, type ThemeConfig } from "./theme.ts";
 import { codeLines, prepareToolPreview } from "./tool-preview.ts";
 import { sanitizeStatus, stripAnsi } from "./utils.ts";
 
@@ -53,6 +54,7 @@ interface RowState {
 		source: string;
 		path: string;
 		colors: Theme["colors"];
+		hint: ExpandHint | undefined;
 		render: ReturnType<typeof prepareToolPreview>;
 	};
 }
@@ -290,7 +292,7 @@ function loadedTools(result: ToolResult): string[] | undefined {
 	return Array.isArray(loaded) && loaded.every((name: unknown) => typeof name === "string" && name.trim()) ? loaded : undefined;
 }
 
-function nestedCallRows(calls: NestedCall[], theme: Theme, cwd: string, icons: IconGlyphs): string[] {
+function nestedCallRows(calls: NestedCall[], theme: Theme, cwd: string, icons: IconGlyphs, expandHint: ExpandHint | undefined): string[] {
 	const ascii = icons.toolResult === "`-";
 	const rows = calls.slice(-3).map((call) => {
 		let detail = firstLine(call.args);
@@ -307,7 +309,10 @@ function nestedCallRows(calls: NestedCall[], theme: Theme, cwd: string, icons: I
 		const duration = call.durationMs === undefined ? "" : ` · ${formatElapsed(call.durationMs)}`;
 		return theme.fg("dim", ascii ? "|-  " : "├  ") + theme.fg(color, `${icon} ${sanitizeStatus(label)}${detail ? `(${sanitizeStatus(detail)})` : ""}${duration}`);
 	});
-	if (calls.length > 3) rows.unshift(theme.fg("dim", `${ascii ? "|-" : "├"}  … ${plural(calls.length - 3, "earlier call")} (ctrl+o to expand)`));
+	if (calls.length > 3) {
+		const head = `${ascii ? "|-" : "├"}  … ${plural(calls.length - 3, "earlier call")}`;
+		rows.unshift(formatExpandHint(theme, expandHint, head, (text) => theme.fg("dim", text)));
+	}
 	return rows;
 }
 
@@ -653,8 +658,16 @@ export function createCompactRenderers(
 			if (!generic && !options.isPartial && !context.isError && (toolName === "edit" || toolName === "write")) {
 				const source = toolName === "edit" ? str(details(result).diff) : str(args.content);
 				const path = str(args.file_path ?? args.path);
-				if (!row.preview || row.preview.source !== source || row.preview.path !== path || row.preview.colors !== theme.colors) {
-					row.preview = { source, path, colors: theme.colors, render: prepareToolPreview(toolName, source, path, theme) };
+				const expandHint = themeConfig().expandHint;
+				if (!row.preview || row.preview.source !== source || row.preview.path !== path || row.preview.colors !== theme.colors
+					|| row.preview.hint !== expandHint) {
+					row.preview = {
+						source,
+						path,
+						colors: theme.colors,
+						hint: expandHint,
+						render: prepareToolPreview(toolName, source, path, theme, expandHint),
+					};
 				}
 			}
 			const timed = isShell || lazyNative;
@@ -682,7 +695,7 @@ export function createCompactRenderers(
 						: context.isError ? summarizeCodemode(result, duration, "Failed") : summary;
 					const color = context.isError ? "error" : partial || calls.some((call) => call.status === "error" || call.status === "cancelled") ? "warning" : "dim";
 					return banded([
-						...nestedCallRows(calls, theme, context.cwd, icons).map((line) => `${pad}  ${line}`),
+						...nestedCallRows(calls, theme, context.cwd, icons, cfg.expandHint).map((line) => `${pad}  ${line}`),
 						gutter + theme.fg(color, status),
 						...(bodyLines ? [bar + (context.isError
 							? painter.paint("error", sanitizeStatus(bodyLines))
@@ -699,7 +712,9 @@ export function createCompactRenderers(
 				const names = loaded?.slice(0, 3).map(sanitizeStatus).join(" · ");
 				const remaining = loaded ? Math.max(0, loaded.length - 3) : 0;
 				return banded([gutter + theme.fg("dim", summary),
-					...(names ? [bar + painter.paint("toolOutput", names + (remaining ? ` · +${remaining} more (ctrl+o to expand)` : ""))] : []),
+					...(names ? [bar + (remaining
+						? formatExpandHint(theme, cfg.expandHint, `${names} · +${remaining} more`, (text) => painter.paint("toolOutput", text))
+						: painter.paint("toolOutput", names))] : []),
 					...(row.preview?.render(width, bar) ?? [])], theme, cfg);
 			}, theme, glyphs, !partial, skin);
 		},

@@ -24,6 +24,12 @@ export type SlotValue = string;
 
 export type DividerStyle = "none" | "line" | "dashed";
 
+/**
+ * `plain` keeps the single `dim` span v0.4.6 painted; `key` lifts only the `ctrl+o` keycap to `muted`
+ * and underlines it, so the affordance is findable while the hint body stays the dimmest text.
+ */
+export type ExpandHint = "plain" | "key";
+
 export interface ThemeConfig {
 	preset: ThemePreset;
 	/** Per-slot overrides; they beat the preset and the Pi token. */
@@ -31,6 +37,8 @@ export interface ThemeConfig {
 	dividers: DividerStyle;
 	gutter: boolean;
 	banding: boolean;
+	/** Absent behaves like `"plain"`, so a literal without the key renders the v0.4.6 hint. */
+	expandHint?: ExpandHint;
 }
 
 export const SLOT_NAMES: readonly SlotName[] = [
@@ -52,6 +60,8 @@ export const SLOT_NAMES: readonly SlotName[] = [
 export const THEME_PRESETS: readonly ThemePreset[] = ["pi", "tokyo-night", "catppuccin-mocha", "gruvbox-dark", "rose-pine-moon"];
 
 export const DIVIDER_STYLES: readonly DividerStyle[] = ["none", "line", "dashed"];
+
+export const EXPAND_HINTS: readonly ExpandHint[] = ["plain", "key"];
 
 /**
  * The Pi token each slot fell back to before the slot layer existed (v0.4.6). `preset: "pi"` with no

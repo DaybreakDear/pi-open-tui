@@ -96,6 +96,7 @@ const DEFAULT_THEME = {
 	dividers: "line" as const,
 	gutter: true,
 	banding: false,
+	expandHint: "plain" as const,
 };
 
 test("defaults the theme block when the config has none", (t) => {
@@ -114,15 +115,17 @@ test("keeps a valid theme block", (t) => {
 		dividers: "dashed",
 		gutter: false,
 		banding: true,
+		expandHint: "plain",
 	});
 });
 
 test("falls back per field on invalid theme values", (t) => {
-	const config = configWith(t, { theme: { preset: "solarized", dividers: "wavy", gutter: "yes", banding: 1 } });
+	const config = configWith(t, { theme: { preset: "solarized", dividers: "wavy", gutter: "yes", banding: 1, expandHint: "sparkle" } });
 	assert.equal(config.theme.preset, "tokyo-night");
 	assert.equal(config.theme.dividers, "line");
 	assert.equal(config.theme.gutter, DEFAULT_THEME.gutter);
 	assert.equal(config.theme.banding, DEFAULT_THEME.banding);
+	assert.equal(config.theme.expandHint, DEFAULT_THEME.expandHint);
 
 	const nullPreset = configWith(t, { theme: { preset: null, slots: null } });
 	assert.equal(nullPreset.theme.preset, "tokyo-night");
@@ -140,8 +143,8 @@ test("keeps slot overrides, drops unknown slots and non-string values", (t) => {
 });
 
 test("an unknown key inside the theme block survives", (t) => {
-	const config = configWith(t, { theme: { preset: "pi", expandHint: "off" } });
-	assert.equal((config.theme as unknown as Record<string, unknown>).expandHint, "off");
+	const config = configWith(t, { theme: { preset: "pi", density: "compact" } });
+	assert.equal((config.theme as unknown as Record<string, unknown>).density, "compact");
 	assert.equal(config.theme.preset, "pi");
 });
 

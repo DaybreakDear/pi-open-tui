@@ -4,7 +4,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { CostConfig } from "./currency.ts";
 import { clampUsdToCny, DEFAULT_COST } from "./currency.ts";
 import type { IconMode } from "./icons.ts";
-import { DIVIDER_STYLES, SLOT_NAMES, THEME_PRESETS, type SlotName, type SlotValue, type ThemeConfig } from "./theme.ts";
+import { DIVIDER_STYLES, EXPAND_HINTS, SLOT_NAMES, THEME_PRESETS, type ExpandHint, type SlotName, type SlotValue, type ThemeConfig } from "./theme.ts";
 
 export type SettingsLanguage = "en" | "zh";
 export type CursorStyle = "block" | "bar" | "underline";
@@ -77,6 +77,9 @@ export interface OpenTuiConfig {
 	theme: ThemeConfig;
 }
 
+/** The shipped expand-hint mode; `"plain"` keeps the v0.4.6 rendering. */
+const DEFAULT_EXPAND_HINT: ExpandHint = "plain";
+
 export const DEFAULT_CONFIG: OpenTuiConfig = {
 	enabled: true,
 	header: true,
@@ -129,6 +132,7 @@ export const DEFAULT_CONFIG: OpenTuiConfig = {
 		dividers: "line",
 		gutter: true,
 		banding: false,
+		expandHint: DEFAULT_EXPAND_HINT,
 	},
 };
 
@@ -170,6 +174,9 @@ function normalizeTheme(value: unknown): ThemeConfig {
 	const dividers = DIVIDER_STYLES.includes(source.dividers as ThemeConfig["dividers"])
 		? (source.dividers as ThemeConfig["dividers"])
 		: DEFAULT_CONFIG.theme.dividers;
+	const expandHint = EXPAND_HINTS.includes(source.expandHint as ExpandHint)
+		? (source.expandHint as ExpandHint)
+		: DEFAULT_EXPAND_HINT;
 	const slots: Partial<Record<SlotName, SlotValue>> = {};
 	if (isRecord(source.slots)) {
 		for (const slot of SLOT_NAMES) {
@@ -184,6 +191,7 @@ function normalizeTheme(value: unknown): ThemeConfig {
 		slots,
 		gutter: typeof source.gutter === "boolean" ? source.gutter : DEFAULT_CONFIG.theme.gutter,
 		banding: typeof source.banding === "boolean" ? source.banding : DEFAULT_CONFIG.theme.banding,
+		expandHint,
 	};
 }
 

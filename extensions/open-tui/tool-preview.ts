@@ -1,6 +1,8 @@
 import { getLanguageFromPath, highlightCode, type Theme } from "@earendil-works/pi-coding-agent";
 import { backgroundAnsi, rgbColor, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { diffWordsWithSpace } from "diff";
+import { formatExpandHint } from "./hint.ts";
+import type { ExpandHint } from "./theme.ts";
 import { stripAnsi } from "./utils.ts";
 
 const MAX_PREVIEW_LINES = 16;
@@ -136,7 +138,13 @@ function withBands(code: string, spans: Span[], base: string, word: string): str
 	return output;
 }
 
-export function prepareToolPreview(kind: "edit" | "write", source: string, path: string, theme: Theme): (width: number, indent: string) => string[] {
+export function prepareToolPreview(
+	kind: "edit" | "write",
+	source: string,
+	path: string,
+	theme: Theme,
+	expandHint?: ExpandHint,
+): (width: number, indent: string) => string[] {
 	const rows: PreviewLine[] = kind === "edit" ? parseDiff(source) : codeLines(source)
 		.map((text, index) => ({ kind: " ", number: String(index + 1), text }));
 	const shown = Math.min(rows.length, MAX_PREVIEW_LINES);
@@ -167,7 +175,10 @@ export function prepareToolPreview(kind: "edit" | "write", source: string, path:
 				? clipped + band + " ".repeat(Math.max(0, columns - visibleWidth(clipped))) + "\x1b[49m"
 				: clipped);
 		});
-		if (hidden > 0) result.push(pad + theme.fg("dim", truncateToWidth(`… +${hidden} lines (ctrl+o to expand)`, available, "…")));
+		if (hidden > 0) {
+			const head = `… +${hidden} lines`;
+			result.push(pad + formatExpandHint(theme, expandHint, head, (text) => theme.fg("dim", text), available));
+		}
 		return result;
 	};
 }
