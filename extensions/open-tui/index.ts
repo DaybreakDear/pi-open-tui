@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type OpenTuiConfig, DEFAULT_CONFIG, ensureConfigExists, loadConfig, saveConfig } from "./config.ts";
 import { installCopyButtons, markCopyScope } from "./copy-buttons.ts";
+import { installMarkdownSkin, markSkinScope, resetMarkdownSkinSession } from "./markdown-skin.ts";
 import { installEditor } from "./editor.ts";
 import { installFooter } from "./footer.ts";
 import { createSkinProvider, type SkinProvider } from "./theme.ts";
@@ -57,6 +58,7 @@ export default function (pi: ExtensionAPI) {
 	let cleanupFooter: (() => void) | undefined;
 	let editor: ReturnType<typeof installEditor> | undefined;
 	let copyButtons: ReturnType<typeof installCopyButtons> | undefined;
+	let cleanupMarkdownSkin: (() => void) | undefined;
 	let pendingUiChange: PendingUiChange | undefined;
 	const footerSegments = createFooterSegments(pi.events, () => requestFooterRender?.());
 	const gitRefresher = new GitStatusRefresher((git) => {
@@ -149,6 +151,7 @@ export default function (pi: ExtensionAPI) {
 				},
 				() => copyButtons?.editor,
 			);
+			cleanupMarkdownSkin = installMarkdownSkin({ theme: () => ctx.ui.theme, config: () => config.theme });
 			copyButtons = installCopyButtons({
 				getTui: editor.getTui,
 				getTheme: () => ctx.ui.theme,
@@ -166,6 +169,8 @@ export default function (pi: ExtensionAPI) {
 			cleanupHeader?.();
 			cleanupFooter?.();
 			copyButtons?.cleanup();
+			cleanupMarkdownSkin?.();
+			cleanupMarkdownSkin = undefined;
 			editor?.cleanup();
 			cleanupHeader = undefined;
 			cleanupFooter = undefined;
@@ -234,6 +239,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		sessionLifecycle.start();
+		resetMarkdownSkinSession();
 		gitRefresher.reset();
 		lastCtx = ctx;
 		state.workingSince = undefined;
@@ -406,6 +412,7 @@ export default function (pi: ExtensionAPI) {
 		skin,
 	);
 
+	pi.registerMarkdownTransformer(markSkinScope);
 	pi.registerMarkdownTransformer(markCopyScope);
 
 	// Save first so the in-memory config and the session agree only after the write.
