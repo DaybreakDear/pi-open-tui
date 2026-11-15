@@ -14,28 +14,52 @@ export const DEFAULT_COST: CostConfig = {
 	switchable: true,
 };
 
-const SYMBOLS: Record<CurrencyCode, string> = { usd: "$", cny: "¥" };
+/**
+ * Supported manual-rate window. A finite product is not enough: `toFixed` switches to exponential
+ * form at 1e21, so `usdToCny: 1e300` used to render as `¥6.3e+297`.
+ */
+export const MIN_USD_TO_CNY = 0.01;
+export const MAX_USD_TO_CNY = 1000;
 
-export function currencySymbol(code: CurrencyCode): string {
-	return SYMBOLS[code] ?? SYMBOLS.usd;
+/**
+ * Invalid or out-of-window rates are typos, not data: fall back to the shipped default so a broken
+ * `open-tui.json` never inflates or deflates the footer.
+ */
+export function clampUsdToCny(rate: unknown): number {
+	if (typeof rate !== "number" || !Number.isFinite(rate)) return DEFAULT_COST.usdToCny;
+	if (rate < MIN_USD_TO_CNY || rate > MAX_USD_TO_CNY) return DEFAULT_COST.usdToCny;
+	return rate;
 }
 
 /**
- * Convert a USD amount into the configured currency. Invalid or non-positive
- * rates fall back to 1 so a typo in `open-tui.json` never inflates the footer.
+ * Fixed rate ladder for the settings row: the settings list only offers items, not inputs. Hand-edited
+ * rates snap to the next rung up, so the ladder lives next to the rate validation.
+ */
+export const RATE_STEPS = [6.8, 7.0, 7.15, 7.3, 7.5] as const;
+
+const SYMBOLS: Record<CurrencyCode, string> = { usd: "$", cny: "¥" };
+
+export function currencySymbol(code: CurrencyCode): string {
+	return SYMBOLS[code];
+}
+
+/**
+ * Convert a USD amount into the configured currency. Rates outside the supported window fall back
+ * to 1 so a typo in `open-tui.json` never inflates the footer.
  */
 export function convertUsd(usd: number, cfg: CostConfig): number {
 	const amount = Number.isFinite(usd) ? usd : 0;
 	if (cfg.currency !== "cny") return amount;
 	const rate = cfg.usdToCny;
-	if (!Number.isFinite(rate) || rate <= 0) return amount;
+	if (!Number.isFinite(rate) || rate < MIN_USD_TO_CNY || rate > MAX_USD_TO_CNY) return amount;
 	return amount * rate;
 }
 
 /** Absolute amounts below 0.1 keep three decimals so small costs stay readable. */
 function formatAmount(value: number, cfg: CostConfig): string {
-	const converted = convertUsd(value, cfg);
-	const digits = Math.abs(converted) < 0.1 ? 3 : 2;
+	// Negative provider figures are reachable; rendering them puts the symbol before the minus sign.
+	const converted = Math.max(0, convertUsd(value, cfg));
+	const digits = converted < 0.1 ? 3 : 2;
 	return `${currencySymbol(cfg.currency)}${converted.toFixed(digits)}`;
 }
 

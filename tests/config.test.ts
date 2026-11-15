@@ -43,6 +43,18 @@ test("falls back per field on invalid cost values", (t) => {
 
 	const infinite = configWith(t, { cost: { usdToCny: 1e999 } });
 	assert.equal(infinite.cost.usdToCny, DEFAULT_COST.usdToCny);
+
+	// Finite but absurd rates would render as ¥6.3e+297, so the window is bounded.
+	const absurd = configWith(t, { cost: { usdToCny: 1e300 } });
+	assert.equal(absurd.cost.usdToCny, DEFAULT_COST.usdToCny);
+	const belowWindow = configWith(t, { cost: { usdToCny: 0.009 } });
+	assert.equal(belowWindow.cost.usdToCny, DEFAULT_COST.usdToCny);
+	const aboveWindow = configWith(t, { cost: { usdToCny: 1000.5 } });
+	assert.equal(aboveWindow.cost.usdToCny, DEFAULT_COST.usdToCny);
+	const lowerBound = configWith(t, { cost: { usdToCny: 0.01 } });
+	assert.equal(lowerBound.cost.usdToCny, 0.01);
+	const upperBound = configWith(t, { cost: { usdToCny: 1000 } });
+	assert.equal(upperBound.cost.usdToCny, 1000);
 });
 
 test("old configs without any new block still load", (t) => {

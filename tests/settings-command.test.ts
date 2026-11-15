@@ -557,6 +557,26 @@ test("steps the manual USD to CNY rate through a fixed ladder", async () => {
 	await settings.waitForClose();
 });
 
+test("a hand-edited rate steps up to the next ladder rung", async () => {
+	const config = structuredClone(DEFAULT_CONFIG);
+	// 7.4 is not on the ladder; a strict float lookup used to fall through to 6.8.
+	config.cost = { ...config.cost, usdToCny: 7.4 };
+	const settings = await openSettings(config);
+	settings.component.handleInput("\t");
+	settings.press("\x1b[B", 3);
+	assert.match(selectedLine(settings.component), /7\.4/);
+
+	settings.component.handleInput("\r");
+	assert.equal(settings.getConfig().cost.usdToCny, 7.5);
+
+	// Above the top rung the ladder wraps around.
+	settings.component.handleInput("\r");
+	assert.equal(settings.getConfig().cost.usdToCny, 6.8);
+
+	settings.component.handleInput("q");
+	await settings.waitForClose();
+});
+
 function shortcutHost(t: TestContext, raw: Partial<OpenTuiConfig>) {
 	const agentDir = temporaryDirectory(t, "pi-open-tui-shortcut-");
 	preserveEnvironment(t, ["PI_CODING_AGENT_DIR"]);

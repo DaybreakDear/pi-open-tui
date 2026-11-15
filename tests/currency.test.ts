@@ -56,3 +56,25 @@ test("non-finite amounts never render NaN", () => {
 	assert.equal(formatCost(Number.POSITIVE_INFINITY, usd), "$0.000");
 	assert.equal(formatRate(Number.NaN, usd), null);
 });
+
+test("negative amounts clamp to zero instead of rendering the symbol before the minus", () => {
+	// Provider figures are only guarded by Number.isFinite upstream, so negatives are reachable.
+	for (const value of [-1, -0.5, -1e-9]) {
+		assert.equal(formatCost(value, usd), "$0.000", `formatCost(${value})`);
+		assert.equal(formatRate(value, cny), "\u00a50.000/M", `formatRate(${value})`);
+	}
+});
+
+test("rates outside the supported window are treated as typos", () => {
+	// 1e300 stays finite, but toFixed switches to exponential form at 1e21.
+	const absurd = formatCost(0.00028, { ...cny, usdToCny: 1e300 });
+	assert.equal(absurd, "\u00a50.000");
+	assert.equal(absurd.includes("e+"), false);
+
+	// Both boundaries are inclusive; one step beyond each falls back to identity.
+	assert.equal(convertUsd(1, { ...cny, usdToCny: 0.01 }), 0.01);
+	assert.equal(convertUsd(1, { ...cny, usdToCny: 1000 }), 1000);
+	assert.equal(convertUsd(1, { ...cny, usdToCny: 0.009 }), 1);
+	assert.equal(convertUsd(1, { ...cny, usdToCny: 1000.5 }), 1);
+	assert.equal(convertUsd(1, { ...cny, usdToCny: 1e300 }), 1);
+});

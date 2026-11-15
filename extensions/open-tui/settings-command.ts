@@ -15,7 +15,7 @@ import {
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 import type { CursorStyle, IconMode, OpenTuiConfig, SettingsLanguage, ThinkingPeekLines } from "./config.ts";
-import { DEFAULT_COST } from "./currency.ts";
+import { RATE_STEPS } from "./currency.ts";
 
 interface SettingItem {
 	id: string;
@@ -261,12 +261,9 @@ function buildFeaturesItems(config: OpenTuiConfig, copy: SettingsCopy): SettingG
 	];
 }
 
-/** Fixed ladder instead of a numeric field: the settings list only offers items, not inputs. */
-const RATE_STEPS = [6.8, 7.0, 7.15, 7.3, 7.5] as const;
-
+/** Hand-edited rates snap to the next rung up; the top rung wraps back to the bottom. */
 function nextRateStep(current: number): number {
-	const index = RATE_STEPS.findIndex((step) => step === current);
-	return RATE_STEPS[(index + 1) % RATE_STEPS.length] ?? DEFAULT_COST.usdToCny;
+	return RATE_STEPS.find((step) => step > current) ?? RATE_STEPS[0];
 }
 
 function buildIconsItems(config: OpenTuiConfig, copy: SettingsCopy): SettingGroup[] {

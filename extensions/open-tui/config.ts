@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { CostConfig } from "./currency.ts";
-import { DEFAULT_COST } from "./currency.ts";
+import { clampUsdToCny, DEFAULT_COST } from "./currency.ts";
 import type { IconMode } from "./icons.ts";
 import { DIVIDER_STYLES, SLOT_NAMES, THEME_PRESETS, type SlotName, type SlotValue, type ThemeConfig } from "./theme.ts";
 
@@ -195,10 +195,7 @@ function normalizeCost(value: unknown): CostConfig {
 	const currency = source.currency === "usd" || source.currency === "cny"
 		? source.currency
 		: DEFAULT_COST.currency;
-	const rate = source.usdToCny;
-	const usdToCny = typeof rate === "number" && Number.isFinite(rate) && rate > 0
-		? rate
-		: DEFAULT_COST.usdToCny;
+	const usdToCny = clampUsdToCny(source.usdToCny);
 	const switchable = typeof source.switchable === "boolean" ? source.switchable : DEFAULT_COST.switchable;
 	return { currency, usdToCny, switchable };
 }
