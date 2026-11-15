@@ -16,7 +16,11 @@ const DASHED_GLYPH = "╌";
 const DIVIDER_TEXT = "---";
 /** `▌` plus its column gap: the rail is prepended outside the width Pi budgeted for the text. */
 const USER_BAR_GLYPH = "▌";
-const USER_BAR_COLUMNS = 2;
+/**
+ * Measured, not hardcoded: `U+258C` is East Asian Ambiguous, so a terminal configured for
+ * ambiguous-wide columns draws the rail two columns wide and the hardcoded 2 overflowed by one.
+ */
+const USER_BAR_COLUMNS = visibleWidth(`${USER_BAR_GLYPH} `);
 
 /** Pi's private `Markdown` fields; checked at runtime because they can change between releases. */
 interface MarkdownInternals {
