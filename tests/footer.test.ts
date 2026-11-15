@@ -1008,11 +1008,13 @@ test("ASCII footer renders icons as semantic labels", () => {
 		"↑ 32k (U 27k + R 5.0k)",
 		"↓ 12",
 		"c 15.6%",
-		"$0.010",
 		"& goal active",
 	]) {
 		assert.ok(output.includes(expected), `missing ${expected}\n${output}`);
 	}
+	// A bare includes() also matches the duplicated "$ $0.010", so anchor on an exact segment.
+	assert.equal(output.match(/\$\d+\.\d+/)?.[0], "$0.010", `unexpected cost segment\n${output}`);
+	assert.equal(output.match(/\$/g)?.length, 1, `expected a single currency symbol\n${output}`);
 	assert.equal(extensionStatusReads, 1);
 
 	config.footerSegments.extensionStatuses = false;

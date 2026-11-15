@@ -29,7 +29,12 @@ test("falls back per field on invalid cost values", (t) => {
 	const config = configWith(t, { cost: { currency: "eur", usdToCny: 0, switchable: "yes" } });
 	assert.equal(config.cost.currency, "usd");
 	assert.equal(config.cost.usdToCny, DEFAULT_COST.usdToCny);
-	assert.equal(config.cost.switchable, true);
+	// Asserted against the constant: "yes" only reads as true because the default happens to be true.
+	assert.equal(config.cost.switchable, DEFAULT_COST.switchable);
+
+	// A string is not a boolean, whatever it spells.
+	const stringFalse = configWith(t, { cost: { switchable: "false" } });
+	assert.equal(stringFalse.cost.switchable, DEFAULT_COST.switchable);
 
 	const negative = configWith(t, { cost: { currency: "cny", usdToCny: -2 } });
 	assert.equal(negative.cost.currency, "cny");

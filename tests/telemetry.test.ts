@@ -15,6 +15,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { ScrollView } from "@earendil-works/pi-tui";
 import { DEFAULT_CONFIG } from "../extensions/open-tui/config.ts";
+import { DEFAULT_COST } from "../extensions/open-tui/currency.ts";
 import openTui from "../extensions/open-tui/index.ts";
 import { estimateDeltaTokens, formatTurnTelemetry, TurnTelemetryTracker } from "../extensions/open-tui/telemetry.ts";
 
@@ -218,6 +219,38 @@ test("uses footer semantics and respects telemetry segment settings", () => {
 		cost: false,
 	};
 	assert.equal(formatTurnTelemetry(telemetry, theme, hidden, "ascii"), "");
+});
+
+test("renders the telemetry cost in the configured currency", () => {
+	// The USD-only caller below walks the default; this case walks the CNY half of the formatter.
+	const telemetry = {
+		tps: 4,
+		ttftMs: 4_000,
+		totalMs: 5_000,
+		inputTokens: 50,
+		outputTokens: 20,
+		cacheReadTokens: 0,
+		stallMs: 0,
+		stallCount: 0,
+		rateUsdPerMTokens: 0.15,
+		generationMs: 5_000,
+		totalTokens: 70,
+		costUsd: 0.00028,
+		measurementMs: 5_000,
+	};
+	const costOnly = {
+		...DEFAULT_CONFIG.telemetry,
+		tps: false,
+		ttft: false,
+		duration: false,
+		tokens: false,
+		stalls: false,
+		cost: true,
+	};
+
+	const output = formatTurnTelemetry(telemetry, theme, costOnly, "ascii", { ...DEFAULT_COST, currency: "cny" });
+	assert.match(output, /¥1\.07\/M/);
+	assert.equal(output.includes("$"), false, `usd symbol must not survive\n${output}`);
 });
 
 test("returns no TPS without output or generation time", () => {
