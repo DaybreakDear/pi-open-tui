@@ -66,6 +66,36 @@ mkdir -p ~/.pi/agent/themes && cp themes/*.json ~/.pi/agent/themes/ && /theme to
 
 可通过 `PI_CODING_AGENT_DIR` 指定其他 agent 目录。四套主题都填满了 Pi 的全部 56 个主题 token，`tests/themes.test.ts` 会逐套对 Pi 的主题 schema 做校验，并要求正文、次要文字、更暗文字及工具输出达到至少 3:1 的对比度。
 
+### open-tui 自有配色
+
+Pi 主题只改造 Pi 本身。open-tui 另用八个槽位给自己的区域上色，让思考块、工具行、命令输出和用户消息竖条彼此可区分：
+
+```json
+{
+  "theme": {
+    "preset": "tokyo-night",
+    "slots": {},
+    "dividers": "line",
+    "gutter": true,
+    "banding": false,
+    "userBar": true,
+    "expandHint": "plain"
+  }
+}
+```
+
+| 键 | 默认值 | 作用 |
+| --- | --- | --- |
+| `preset` | `"tokyo-night"` | `tokyo-night`、`catppuccin-mocha`、`gruvbox-dark`、`rose-pine-moon`，或 `pi` 表示改用 Pi 自己的 token |
+| `slots` | `{}` | 按槽位覆盖颜色，例如 `{ "command": "oklch(0.7 0.12 210)" }` |
+| `dividers` | `"line"` | `line`、`dashed` 或 `none`，用于轮次之间和工具输出分隔 |
+| `gutter` | `true` | 命令输出左侧的竖线 |
+| `banding` | `false` | 交替的工具行使用淡背景 |
+| `userBar` | `true` | 用户消息左侧的彩色竖条 |
+| `expandHint` | `"plain"` | 设为 `key` 会给展开提示里的 `ctrl+o` 键幅加下划线 |
+
+> **从 0.4.x 升级会改变默认外观。** `preset` 默认是 `tokyo-night`，即使你从没改过配置，底栏、分隔线和工具标题的配色也会变。设 `"preset": "pi"` 可以完全回到 0.4.x 的渲染效果；其余新增选项的默认值都等同旧行为。
+
 ## 配置
 
 运行 `/open-tui` 打开设置窗口，包含**常规**、**外观**、**底栏**和**遥测**四个页面，支持英文和简体中文，并适应终端尺寸。Tab/Shift+Tab 或 ←/→ 切页，↑/↓ 移动，Enter/Space 修改值，Esc/q 关闭。
@@ -164,6 +194,30 @@ TPS 用服务商报告的输出 Token 除以生成时间，包含等待和停顿
 兼容输入框中的非空草稿也会在边框空余处显示 `[Copy]`，优先下边框，不够时尝试上边框。点击复制完整草稿，包括折叠粘贴的原文，不移动光标或改变焦点。底栏、工作状态和滚动提示保持原样；两条边框都没有足够空间时隐藏按钮。
 
 可在**常规 → 消息与工具 → 复制按钮**中开关此功能。宽度限制、代码块缓存和与其他渲染器共存的细节见[复制按钮说明](./docs/implementation.md#复制按钮行为)。
+
+## 上下文块
+
+装好 `billion-context-pi` 后，open-tui 会读取它的旁路文件，显示对话被压缩的程度——块数，以及至少有一个块之后的压缩比：
+
+```
+≡ 3 bl · 2.1×
+```
+
+按 `ctrl+shift+c`（或执行 `open-tui:context`）可以打开详情浮层，列出每个块；点击某个块可展开。这条联动严格只读：open-tui 不写旁路文件、不在浮层里派发 Pi 命令，也不 import `billion-context-pi`。没装就没有这个段。
+
+```json
+{ "contextBlocks": { "enabled": true, "footerSegment": true, "pollMs": 1500 } }
+```
+
+`footerSegment: false` 会隐藏底栏段，但浮层依然可用。`schemaVersion` 不是 `1` 的旁路文件会被忽略，并且每个进程只警告一次；文件损坏时保留上一次有效快照，而不是清空。
+
+## 快捷键
+
+| 快捷键 | 作用 |
+| --- | --- |
+| `ctrl+shift+m` | 切换费用货币，需 `cost.switchable` 开启 |
+| `ctrl+shift+c` | 打开上下文压缩块浮层 |
+| `ctrl+o` | 展开折叠的工具输出或思考块（Pi 自带绑定） |
 
 ## 文档
 

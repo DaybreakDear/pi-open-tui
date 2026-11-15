@@ -66,6 +66,36 @@ mkdir -p ~/.pi/agent/themes && cp themes/*.json ~/.pi/agent/themes/ && /theme to
 
 Set `PI_CODING_AGENT_DIR` to use a different agent directory. Every theme fills all 56 Pi theme tokens, and `tests/themes.test.ts` checks each one against Pi's theme schema and requires at least 3:1 contrast for text, muted and dim text and for tool output.
 
+### open-tui colours
+
+A Pi theme restyles Pi. open-tui additionally paints its own surfaces through eight slots, so the thinking block, tool rows, command output, and the user-message rail stay distinguishable from each other:
+
+```json
+{
+  "theme": {
+    "preset": "tokyo-night",
+    "slots": {},
+    "dividers": "line",
+    "gutter": true,
+    "banding": false,
+    "userBar": true,
+    "expandHint": "plain"
+  }
+}
+```
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `preset` | `"tokyo-night"` | `tokyo-night`, `catppuccin-mocha`, `gruvbox-dark`, `rose-pine-moon`, or `pi` for Pi's own tokens |
+| `slots` | `{}` | Per-slot colour overrides, e.g. `{ "command": "oklch(0.7 0.12 210)" }` |
+| `dividers` | `"line"` | `line`, `dashed`, or `none` between turns and around tool output |
+| `gutter` | `true` | A vertical rail beside command output |
+| `banding` | `false` | Alternate tool rows get a faint background |
+| `userBar` | `true` | A coloured rail beside user messages |
+| `expandHint` | `"plain"` | `key` underlines the `ctrl+o` keycap in expand hints |
+
+> **Upgrading from 0.4.x changes the default look.** `preset` defaults to `tokyo-night`, so the footer, dividers, and tool titles are recoloured even if you never edit the config. Set `"preset": "pi"` to get the 0.4.x rendering back exactly. Every other new option defaults to the previous behaviour.
+
 ## Configuration
 
 Run `/open-tui` to open the settings dialog. Its **General**, **Appearance**, **Footer**, and **Telemetry** tabs are available in English and Simplified Chinese and adapt to the terminal size. Use Tab/Shift+Tab or ←/→ to switch tabs, ↑/↓ to move, Enter/Space to change a value, and Esc/q to close.
@@ -164,6 +194,30 @@ Code labels copy code without fences, preserving indentation and tabs. User-mess
 A nonempty draft in a compatible input editor also gets a `[Copy]` button in a free border gap, preferring the bottom border and falling back to the top. It copies the complete draft, including expanded folded pastes, without moving the cursor or changing focus. Footer, working-status, and scroll information stay intact; the button is hidden if neither border has enough space.
 
 Toggle **General → Messages & tools → Copy buttons** to enable or disable this feature. [Copy-button details](./docs/implementation.md#copy-button-behavior) cover width limits, cached blocks, and interaction with other renderers.
+
+## Context blocks
+
+When `billion-context-pi` is installed, open-tui reads its sidecar and shows how heavily the conversation has been compressed — the block count and, once at least one block exists, the compression ratio:
+
+```
+≡ 3 bl · 2.1×
+```
+
+Press `ctrl+shift+c` (or run `open-tui:context`) for a detail overlay listing every block, and click a block to expand it. The linkage is strictly read-only: open-tui never writes the sidecar, never dispatches a Pi command from the overlay, and does not import `billion-context-pi`. Without the sidecar there is simply no segment.
+
+```json
+{ "contextBlocks": { "enabled": true, "footerSegment": true, "pollMs": 1500 } }
+```
+
+`footerSegment: false` keeps the overlay reachable while hiding the footer segment. A sidecar whose `schemaVersion` is not `1` is ignored with one warning per process, and a malformed file keeps the last good snapshot instead of clearing it.
+
+## Keyboard shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| `ctrl+shift+m` | Toggle the cost currency, when `cost.switchable` is on |
+| `ctrl+shift+c` | Open the context compression blocks overlay |
+| `ctrl+o` | Expand a collapsed tool output or thinking block (Pi's own binding) |
 
 ## Documentation
 

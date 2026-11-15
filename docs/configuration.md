@@ -96,6 +96,30 @@ Both the footer total and the telemetry rate are formatted by a single formatter
 
 The rate is a fixed, manually entered number — pi-open-tui does not fetch exchange rates. Amounts at or above 0.1 in the display currency use two decimals, smaller amounts use three. A session whose cost rounds below `0.001` shows `$0.000`; negative provider figures are clamped to zero. See [usage and telemetry](./implementation.md#usage-and-telemetry).
 
+### Theme options
+Pi themes restyle Pi; these options restyle open-tui's own surfaces. `preset` selects a palette, `slots` overrides individual colours, and the rest are structural toggles built on those colours.
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `theme.preset` | `"tokyo-night"` | `tokyo-night`, `catppuccin-mocha`, `gruvbox-dark`, `rose-pine-moon`, or `pi` to paint Pi's own tokens |
+| `theme.slots` | `{}` | Per-slot overrides. Slots: `thinking`, `thinkingBorder`, `toolCall`, `toolTitle`, `command`, `toolOutput`, `userBar`, `cost` |
+| `theme.dividers` | `"line"` | `line`, `dashed`, or `none` |
+| `theme.gutter` | `true` | Vertical rail beside command output |
+| `theme.banding` | `false` | Faint background on alternating tool rows |
+| `theme.userBar` | `true` | Coloured rail beside user messages |
+| `theme.expandHint` | `"plain"` | `key` underlines the `ctrl+o` keycap in expand hints; `plain` keeps the 0.4.x rendering |
+
+`preset: "pi"` renders open-tui through Pi's tokens, which is byte-identical to 0.4.6 once the structural options are off. Slot values accept the same forms as Pi theme tokens: `#RRGGBB`, `oklch(...)`, `okhsl(...)`, or a Pi token name. An unknown slot name or an unparseable colour falls back to the slot's preset colour.
+
+### Context blocks
+Read-only linkage to `billion-context-pi`. See [context blocks](../README.md#context-blocks).
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `contextBlocks.enabled` | `true` | Read the sidecar and show it in the footer and the overlay |
+| `contextBlocks.footerSegment` | `true` | Footer segment on/off; the overlay stays reachable either way |
+| `contextBlocks.pollMs` | `1500` | `fs.watchFile` poll interval in milliseconds |
+
 ### Icons
 
 | `icons.mode` | Selection |
@@ -203,6 +227,32 @@ Tab/Shift+Tab 或 ←/→ 切页，↑/↓ 或 Page Up/Page Down 移动，Enter/
 
 汇率是不自动更新的固定值，pi-open-tui 不会联网抓取行情。显示货币下不低于 0.1 的金额保留两位小数，更小的金额保留三位；四舍五入后低于 `0.001` 的会话显示 `$0.000`，服务商报告的负数计为 0。详见[用量与遥测](./implementation.md#用量与遥测)。
 
+### 主题选项
+
+Pi 主题负责 Pi 本身；下列选项负责 open-tui 自己的区域。`preset` 选调色板，`slots` 覆盖单个颜色，其余是基于这些颜色构建的结构开关。
+
+| 键 | 默认值 | 作用 |
+| --- | --- | --- |
+| `theme.preset` | `"tokyo-night"` | `tokyo-night`、`catppuccin-mocha`、`gruvbox-dark`、`rose-pine-moon`，或 `pi` 表示使用 Pi 自己的 token |
+| `theme.slots` | `{}` | 按槽位覆盖颜色。槽位：`thinking`、`thinkingBorder`、`toolCall`、`toolTitle`、`command`、`toolOutput`、`userBar`、`cost` |
+| `theme.dividers` | `"line"` | `line`、`dashed` 或 `none` |
+| `theme.gutter` | `true` | 命令输出左侧的竖线 |
+| `theme.banding` | `false` | 交替的工具行使用淡背景 |
+| `theme.userBar` | `true` | 用户消息左侧的彩色竖条 |
+| `theme.expandHint` | `"plain"` | 设为 `key` 会给展开提示里的 `ctrl+o` 键幅加下划线；`plain` 保持 0.4.x 的渲染 |
+
+`preset: "pi"` 让 open-tui 走 Pi 的 token；在结构开关全关时与 0.4.6 逐字节一致。槽位颜色的可选形态与 Pi 主题 token 相同：`#RRGGBB`、`oklch(...)`、`okhsl(...)`，或一个 Pi token 名。未知槽位名或无法解析的颜色会回退到该预设的颜色。
+
+### 上下文块
+
+对 `billion-context-pi` 的只读联动。参见[上下文块](../README.zh-CN.md#上下文块)。
+
+| 键 | 默认值 | 作用 |
+| --- | --- | --- |
+| `contextBlocks.enabled` | `true` | 读取旁路文件并同时用于底栏和浮层 |
+| `contextBlocks.footerSegment` | `true` | 底栏段开关；无论开关如何，浮层都可打开 |
+| `contextBlocks.pollMs` | `1500` | `fs.watchFile` 的轮询间隔（毫秒） |
+
 ### 图标
 
 | `icons.mode` | 选择规则 |
@@ -243,6 +293,7 @@ The complete default configuration is shared by both language references. Set `s
     "runtime": true,
     "context": true,
     "contextBar": true,
+    "contextBlocks": true,
     "tokens": true,
     "cost": true,
     "liveTps": true,
@@ -265,8 +316,23 @@ The complete default configuration is shared by both language references. Set `s
     "usdToCny": 7.15,
     "switchable": true
   },
+  "contextBlocks": {
+    "enabled": true,
+    "footerSegment": true,
+    "pollMs": 1500
+  },
+  "theme": {
+    "preset": "tokyo-night",
+    "slots": {},
+    "dividers": "line",
+    "gutter": true,
+    "banding": false,
+    "userBar": true,
+    "expandHint": "plain"
+  },
   "thinkingPeek": {
-    "lines": 1
+    "lines": 1,
+    "showCounts": true
   },
   "toolView": {
     "mode": "native",

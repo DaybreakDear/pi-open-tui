@@ -1,5 +1,27 @@
 # Changelog
 
+## [Unreleased]
+
+## [0.5.0] - 2026-11-15
+
+### Added
+
+- Add an open-tui theme system: eight colour slots (`thinking`, `thinkingBorder`, `toolCall`, `toolTitle`, `command`, `toolOutput`, `userBar`, `cost`) driven by four presets (`tokyo-night` (default), `catppuccin-mocha`, `gruvbox-dark`, `rose-pine-moon`), a `pi` passthrough that renders Pi's own tokens, and per-slot overrides through `theme.slots`.
+- Add `theme.dividers`, `theme.gutter`, and `theme.banding` for structural readability, and a markdown skin that recolours headings, code fences, and inline emphasis.
+- Add `theme.userBar` for a coloured rail on user messages, and `theme.expandHint` to emphasise the `ctrl+o` keycap on expand hints.
+- Add `cost.currency`, `cost.usdToCny`, and `cost.switchable` with `ctrl+shift+m` and a settings row, so the footer and telemetry can show CNY with a manual fixed rate.
+- Show elapsed time and token count in the thinking peek header through `thinkingPeek.showCounts`.
+- Add read-only billion-context linkage: a footer compression-block segment, `ctrl+shift+c`, and the `open-tui:context` command, configured by `contextBlocks`.
+- Add theme controls to the Appearance page of the settings dialog, including the user-message rail.
+
+### Changed
+
+- **The default appearance changes for existing users.** open-tui now paints its own colours, and `theme.preset` defaults to `tokyo-night` instead of Pi's tokens. Set `"theme": { "preset": "pi" }` to restore the pre-0.5.0 colours exactly; every other new option already defaults to the previous behaviour.
+
+### Fixed
+
+- Print the currency symbol once. The footer showed `$ $0.006` and telemetry showed `$$/M` because the cost glyph and the formatter both emitted a symbol.
+
 ## [0.4.6] - 2026-11-14
 
 ### Added
