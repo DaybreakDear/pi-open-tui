@@ -16,6 +16,7 @@ import {
 } from "@earendil-works/pi-tui";
 import type { CursorStyle, IconMode, OpenTuiConfig, SettingsLanguage, ThinkingPeekLines } from "./config.ts";
 import { currencySymbol, RATE_STEPS } from "./currency.ts";
+import { DIVIDER_STYLES, THEME_PRESETS, type ThemePreset } from "./theme.ts";
 
 interface SettingItem {
 	id: string;
@@ -53,6 +54,7 @@ const COPY = {
 			usage: "Usage",
 			other: "Other",
 			measurements: "Measurements",
+			theme: "Theme",
 		},
 		hint: "Tab/Shift+Tab/←/→: tabs · ↑/↓: move · Enter/Space: change · Esc/q: close",
 		labels: {
@@ -90,6 +92,10 @@ const COPY = {
 			currency: "Currency",
 			usdToCny: "USD→CNY rate",
 			currencySwitch: "Currency switching (ctrl+shift+m)",
+			themePreset: "Theme preset",
+			dividers: "Dividers",
+			gutter: "Tool gutter",
+			banding: "Row banding",
 		},
 		values: {
 			on: "On",
@@ -100,6 +106,7 @@ const COPY = {
 			cursorStyles: { block: "Block", bar: "Bar", underline: "Underline" },
 			icons: { auto: "Auto", nerd: "Nerd", unicode: "Unicode", ascii: "ASCII" },
 			currencies: { usd: `USD ${currencySymbol("usd")}`, cny: `CNY ${currencySymbol("cny")}` },
+			dividers: { none: "None", line: "Line", dashed: "Dashed" },
 		},
 		notices: {
 			currencyLocked: "Currency switching is disabled. Enable it in open-tui settings.",
@@ -122,6 +129,7 @@ const COPY = {
 			usage: "用量",
 			other: "其他",
 			measurements: "测量指标",
+			theme: "主题",
 		},
 		hint: "Tab/Shift+Tab/←/→：切页 · ↑/↓：移动 · Enter/Space：更改 · Esc/q：关闭",
 		labels: {
@@ -159,6 +167,10 @@ const COPY = {
 			currency: "货币",
 			usdToCny: "汇率（USD→CNY）",
 			currencySwitch: "货币切换（ctrl+shift+m）",
+			themePreset: "主题预设",
+			dividers: "分割线",
+			gutter: "工具竖线",
+			banding: "行底色",
 		},
 		values: {
 			on: "开启",
@@ -169,6 +181,7 @@ const COPY = {
 			cursorStyles: { block: "块", bar: "竖线", underline: "下划线" },
 			icons: { auto: "自动", nerd: "Nerd", unicode: "Unicode", ascii: "ASCII" },
 			currencies: { usd: `美元 ${currencySymbol("usd")}`, cny: `人民币 ${currencySymbol("cny")}` },
+			dividers: { none: "无", line: "实线", dashed: "虚线" },
 		},
 		notices: {
 			currencyLocked: "货币切换已关闭。可在 open-tui 设置中开启。",
@@ -273,6 +286,27 @@ function nextRateStep(current: number): number {
 	return RATE_STEPS.find((step) => step > current) ?? RATE_STEPS[0];
 }
 
+/** Preset names are proper nouns: they read the same in both settings languages. */
+const PRESET_LABELS: Record<ThemePreset, string> = {
+	pi: "Pi",
+	"tokyo-night": "Tokyo Night",
+	"catppuccin-mocha": "Catppuccin Mocha",
+	"gruvbox-dark": "Gruvbox Dark",
+	"rose-pine-moon": "Rosé Pine Moon",
+};
+
+function cycleThemePreset(config: OpenTuiConfig): OpenTuiConfig {
+	const currentIdx = THEME_PRESETS.indexOf(config.theme.preset);
+	const next = THEME_PRESETS[(currentIdx + 1) % THEME_PRESETS.length]!;
+	return { ...config, theme: { ...config.theme, preset: next } };
+}
+
+function cycleDividers(config: OpenTuiConfig): OpenTuiConfig {
+	const currentIdx = DIVIDER_STYLES.indexOf(config.theme.dividers);
+	const next = DIVIDER_STYLES[(currentIdx + 1) % DIVIDER_STYLES.length]!;
+	return { ...config, theme: { ...config.theme, dividers: next } };
+}
+
 function buildIconsItems(config: OpenTuiConfig, copy: SettingsCopy): SettingGroup[] {
 	const flag = (value: boolean) => value ? copy.values.on : copy.values.off;
 	return [
@@ -287,6 +321,15 @@ function buildIconsItems(config: OpenTuiConfig, copy: SettingsCopy): SettingGrou
 				{ id: "currency", label: copy.labels.currency, currentValue: copy.values.currencies[config.cost.currency] },
 				{ id: "usdToCny", label: copy.labels.usdToCny, currentValue: String(config.cost.usdToCny) },
 				{ id: "switchable", label: copy.labels.currencySwitch, currentValue: flag(config.cost.switchable) },
+			],
+		},
+		{
+			label: copy.sections.theme,
+			items: [
+				{ id: "themePreset", label: copy.labels.themePreset, currentValue: PRESET_LABELS[config.theme.preset] },
+				{ id: "dividers", label: copy.labels.dividers, currentValue: copy.values.dividers[config.theme.dividers] },
+				{ id: "themeGutter", label: copy.labels.gutter, currentValue: flag(config.theme.gutter) },
+				{ id: "themeBanding", label: copy.labels.banding, currentValue: flag(config.theme.banding) },
 			],
 		},
 	];
@@ -410,6 +453,10 @@ function handleSettingChange(
 		if (itemId === "switchable") {
 			return { ...config, cost: { ...config.cost, switchable: !config.cost.switchable } };
 		}
+		if (itemId === "themePreset") return cycleThemePreset(config);
+		if (itemId === "dividers") return cycleDividers(config);
+		if (itemId === "themeGutter") return { ...config, theme: { ...config.theme, gutter: !config.theme.gutter } };
+		if (itemId === "themeBanding") return { ...config, theme: { ...config.theme, banding: !config.theme.banding } };
 	}
 	if (tab === "segments") {
 		return toggleSetting(config, itemId as keyof OpenTuiConfig["footerSegments"]);

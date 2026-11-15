@@ -597,6 +597,53 @@ test("toggles currency switching from the Appearance tab", async () => {
 	await settings.waitForClose();
 });
 
+test("cycles theme presets from the Appearance tab", async () => {
+	const settings = await openSettings();
+	settings.component.handleInput("\t");
+	// Appearance → Icon mode → Cursor style → Currency → USD→CNY rate → Currency switching → Theme preset
+	settings.press("\x1b[B", 5);
+	assert.match(selectedLine(settings.component), /Theme preset/);
+	assert.match(selectedLine(settings.component), /Tokyo Night/);
+
+	const presets: string[] = [];
+	for (let index = 0; index < 5; index++) {
+		settings.component.handleInput("\r");
+		presets.push(settings.getConfig().theme.preset);
+	}
+	assert.deepEqual(presets, ["catppuccin-mocha", "gruvbox-dark", "rose-pine-moon", "pi", "tokyo-night"]);
+
+	settings.component.handleInput("q");
+	await settings.waitForClose();
+});
+
+test("cycles dividers and toggles the theme structure from the Appearance tab", async () => {
+	const settings = await openSettings();
+	settings.component.handleInput("\t");
+	settings.press("\x1b[B", 6);
+	assert.match(selectedLine(settings.component), /Dividers/);
+	assert.match(selectedLine(settings.component), /Line/);
+
+	const dividers: string[] = [];
+	for (let index = 0; index < 3; index++) {
+		settings.component.handleInput("\r");
+		dividers.push(settings.getConfig().theme.dividers);
+	}
+	assert.deepEqual(dividers, ["dashed", "none", "line"]);
+
+	settings.component.handleInput("\x1b[B");
+	assert.match(selectedLine(settings.component), /Tool gutter/);
+	settings.component.handleInput("\r");
+	assert.equal(settings.getConfig().theme.gutter, false);
+
+	settings.component.handleInput("\x1b[B");
+	assert.match(selectedLine(settings.component), /Row banding/);
+	settings.component.handleInput("\r");
+	assert.equal(settings.getConfig().theme.banding, true);
+
+	settings.component.handleInput("q");
+	await settings.waitForClose();
+});
+
 test("a hand-edited rate steps up to the next ladder rung", async () => {
 	const config = structuredClone(DEFAULT_CONFIG);
 	// 7.4 is not on the ladder; a strict float lookup used to fall through to 6.8.
