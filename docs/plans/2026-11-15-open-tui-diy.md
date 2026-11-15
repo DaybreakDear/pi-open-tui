@@ -771,3 +771,86 @@ preset/dividers/gutter/banding 就停了。
 - 竖条不会超预算也不会错算 CJK：预算在内部渲染**之前**就减掉（`markdown-skin.ts:106`），
   内部行再校验（`:111`），44 列预算 + 2 列竖条 = 40/40；宽度用 `visibleWidth` 而非 `.length`。
   唯一残留风险即 G6。
+
+---
+
+## T4 修复轮（复审行动项）
+
+复审范围：`dc3cc55` 之后的 4 个提交（`e643afa` / `95e5bc5` / `e4dd81b` / `a6ecc93`）。
+结论 **CHANGES REQUIRED**，无 BLOCKER。
+
+**已核实的正面结论（不要动这些）**
+- 只读不变式成立：两个新文件里 `writeFile|appendFile|writeSync|createWriteStream|runCommand|sendMessage|dispatchCommand|billion-context-pi` 仅命中一处注释；无 `exec`/`spawn`；块形状本地镜像 `BcpBlockLike`，未 import `billion-context-pi`
+- watcher 回收正确：`tests/context-blocks-runtime.test.ts:302` 同时 spy `fs.watchFile`/`fs.unwatchFile` **并**用 `process.getActiveResourcesInfo()` 断言 `StatWatcher` 数量回落到基线
+- `ctrl+shift+c` **可以触发**：`pi-tui` 的 `keys.js:996-999` 有 `MODIFIERS.shift + MODIFIERS.ctrl` 分支，走 `matchesKittySequence` / `matchesPrintableModifyOtherKeys`。实测 `matchesKey("\x1b[99;6u","ctrl+shift+c") === true`。但**传统终端把该组合发成 `^C`**（`matchesKey("\x03","ctrl+shift+c") === false`），只会被 Pi 当 interrupt。因此 `/open-tui:context` 命令不是摆设，README 必须注明该快捷键需要 Kitty 协议终端（kitty/Ghostty/foot/WezTerm）
+- `tests/context-blocks.test.ts:73`（畸形 JSON 保留上一次快照）是**真门**：它驱动真实 watch 回调 + `utimesSync` 改 mtime + 断言引用同一性
+- 既有断言未被削弱：`tests/footer.test.ts` 纯新增（+38/-0），`tests/tool-view.test.ts` 零改动
+
+### H1（SHOULD FIX）浮层分隔线溢出并折行
+
+`extensions/open-tui/context-blocks-overlay.ts:108`
+`innerWidth = Math.max(20, width - 2)` 只减了 `Box(1, 1, …)` 的左右内边距，
+但子元素全是 `new Text(str, 1, 0)`（`:118`、`:143` 及所有 `blockLines` 行），
+每个孩子又带 2 列 paddingX。于是 `innerWidth` 宽的分隔线在 `width - 2` 的孩子区里
+渲染成 `innerWidth + 2`，折行。实测渲染输出在第 4 行和第 12 行各多出一条 `"  ──   "`。
+
+同时 `CHROME_ROWS = 7`（`:20`）低估了真实 chrome（折行后是 9 行），`budget`（`:120`）
+多分配 2 行，矮终端上浮层会顶出底部。
+
+**做法**：`Math.max(20, width - 4)`，或把孩子改成 `new Text(line, 0, 0)` 后保持 `width - 2`；
+然后重算 `CHROME_ROWS`。补测试断言 `render(80)` 每行可见宽度 ≤ 80 且行数 ≤ 行预算。
+
+### H2（SHOULD FIX）鼠标点击选中错误的块
+
+`extensions/open-tui/context-blocks-overlay.ts:201` `const block = this.rowBlocks[event.y - 1];`
+假设块行从组件顶部下一行开始，但块行实际在三个 chrome 子元素（`:110` 标题、`:117` 表头、
+`:118` 分隔线）之下，还要算上 H1 的折行。`rowBlocks` 是**只含块行**的稠密索引（`:130-136`），
+整体错位 3+ 行。实测：点 b1 展开 b3，点 b3 也展开 b1，点 b2 无反应。
+
+**做法**：构建 `rowBlocks` 时对齐绝对渲染行（标题/表头/分隔线位置填 `-1` 占位），
+取 `this.rowBlocks[event.y]`，只减真实的 Box padding（`contentY = event.y - paddingY`）。
+补测试：点第 i 块的表头行 → 断言展开第 i 块。
+
+### H3（SHOULD FIX）缺少设计要求的主动重读
+
+`docs/plans/2026-11-15-open-tui-diy-design.md` §3.4 要求
+「`fs.watchFile(…, { interval: 1500 })` + 在 `agent_settled` / `session_compact` 事件后主动读一次」。
+但 `index.ts:422`（`agent_settled`）与 `:471`（`session_compact`）都没碰 `contextBlocks`，
+唯一的数据源是 watch 回调（`:154-157`）。
+
+后果：压缩轮次结束后底栏最多滞后 1500ms；更严重的是若 `startContextBlocksWatch` 在
+`index.ts:151` 的 `if (!sessionFile()) return;` 提前返回（内存会话 / `getSessionFile()` 抛错），
+**没有任何地方重新挂载**，该会话的段位永久失效。
+
+**做法**：两个 handler 里
+`if (config.contextBlocks.enabled) { if (!stopContextBlocks) startContextBlocksWatch(ctx); else { contextBlocks = readContextBlocks(currentSessionFile(ctx)); requestFooterRender?.(); } }`
+
+### H4（SHOULD FIX）`contextBlocks.enabled: false` 时浮层仍可打开
+
+`config.ts:55` 把 `enabled` 文档为「读取侧文件并在底栏和浮层中显示」，`index.ts:213` 对底栏做了判断，
+但 `openContextBlocksOverlay`（`index.ts:163`）没检查，命令（`:560`）与快捷键（`:568`）仍会读侧文件并渲染。
+
+**做法**：`openContextBlocksOverlay` 里 `!config.contextBlocks.enabled` 时提前返回。
+注意保留 `footerSegment: false` 但浮层仍可用的既有语义（`config.ts:57` 有文档）。
+
+### H5（NIT，顺手）
+
+| # | 位置 | 问题 | 处理 |
+|---|---|---|---|
+| 5 | `context-blocks.ts:156` | 监听路径只在启动时求值一次 | H3 的重新挂载已覆盖；否则在回调里比对 `getSessionFile()` |
+| 6 | `context-blocks.ts:161` | `Math.max(1, pollMs)` 放行 `NaN`/`Infinity` | `Number.isFinite` 校验后退回 `DEFAULT_POLL_MS` |
+| 7 | `context-blocks.ts:83` | `process.emitWarning` 绕过仓库的 `notify` 通道，全屏 TUI 下会丢 | 改走 `notify`；模块级一次性开关本身是对的 |
+| 8 | `context-blocks-overlay.ts:33-37` | `summaryRatio = compressedTokens / (summary.length / 4)`，2 字符摘要会打印 `2500.0x` | 截断 `Math.min(ratio, 999)` 或改为由 `survivedCount` 推导，或先去掉该列 |
+| 9 | `context-blocks.ts` + `tests/context-blocks.test.ts` | 这两个文件是 LF，本次改动其余文件是 CRLF，无 `.gitattributes` | 统一为 CRLF，避免将来整文件 diff |
+| 10 | `context-blocks-overlay.ts:112-115` | 空状态提示漏了 `r reload`，而它恰是最需要重读的状态 | 补上 |
+| 11 | `tests/footer.test.ts:1291-1296` | 「两处分隔符」测试**区分不了 `null` 与 `""`**（消费者已 `filter(Boolean)`） | 改为断言 hook 契约：`getContextBlocks` 返回空串时的 `render(160)` 行数，或断言 `footerSegments.contextBlocks: false` 时根本不查询 |
+
+### H6（测试补强，与 H1/H2 同批）
+
+- `tests/context-blocks.test.ts:54`（`schemaVersion` 只警告一次）是**自证**：`readContextBlocks`
+  按 mtime 缓存了 `undefined`，第二次读在缓存里就返回了，删掉 `schemaWarningEmitted` 标志也能过。
+  改为改写侧文件并 bump mtime，或用两个不同路径
+- `tests/footer.test.ts:1300` 硬编码分隔符数量为 3，将来插入任何段位都会以错误理由失败
+- `tests/context-blocks-runtime.test.ts:278` 依赖 `await setTimeout(600)` 时序，负载高时会抖；改用 `waitFor` 轮询
+- `tests/context-blocks-runtime.test.ts:250` 只断言快捷键字符串被注册，从未把字节喂给 `matchesKey`；
+  补一条 `matchesKey("\x1b[99;6u", "ctrl+shift+c") === true` 的契约测试
