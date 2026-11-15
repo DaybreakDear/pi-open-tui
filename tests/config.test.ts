@@ -29,12 +29,17 @@ test("falls back per field on invalid cost values", (t) => {
 	const config = configWith(t, { cost: { currency: "eur", usdToCny: 0, switchable: "yes" } });
 	assert.equal(config.cost.currency, "usd");
 	assert.equal(config.cost.usdToCny, DEFAULT_COST.usdToCny);
-	// Asserted against the constant: "yes" only reads as true because the default happens to be true.
 	assert.equal(config.cost.switchable, DEFAULT_COST.switchable);
 
 	// A string is not a boolean, whatever it spells.
 	const stringFalse = configWith(t, { cost: { switchable: "false" } });
-	assert.equal(stringFalse.cost.switchable, DEFAULT_COST.switchable);
+	assert.equal(stringFalse.cost.switchable, true, "a \"false\" string must not flip the flag off");
+
+	// Cost flags default to true, so only a flag that defaults to false can prove the fallback runs
+	// instead of a truthiness read: "yes" must not become true here.
+	assert.equal(DEFAULT_CONFIG.inlineFooter, false, "this gate only holds while the default is false");
+	const truthyString = configWith(t, { inlineFooter: "yes" });
+	assert.equal(truthyString.inlineFooter, false, "a truthy string falls back to the default");
 
 	const negative = configWith(t, { cost: { currency: "cny", usdToCny: -2 } });
 	assert.equal(negative.cost.currency, "cny");

@@ -40,19 +40,18 @@ export const RATE_STEPS = [6.8, 7.0, 7.15, 7.3, 7.5] as const;
 const SYMBOLS: Record<CurrencyCode, string> = { usd: "$", cny: "¥" };
 
 export function currencySymbol(code: CurrencyCode): string {
-	return SYMBOLS[code];
+	// The config is hand-editable, so an unknown code falls back to the dollar sign.
+	return SYMBOLS[code] ?? SYMBOLS.usd;
 }
 
 /**
- * Convert a USD amount into the configured currency. Rates outside the supported window fall back
- * to 1 so a typo in `open-tui.json` never inflates the footer.
+ * Convert a USD amount into the configured currency. An out-of-window rate falls back to the shipped
+ * default through `clampUsdToCny`, the same fallback the settings ladder uses.
  */
 export function convertUsd(usd: number, cfg: CostConfig): number {
 	const amount = Number.isFinite(usd) ? usd : 0;
 	if (cfg.currency !== "cny") return amount;
-	const rate = cfg.usdToCny;
-	if (!Number.isFinite(rate) || rate < MIN_USD_TO_CNY || rate > MAX_USD_TO_CNY) return amount;
-	return amount * rate;
+	return amount * clampUsdToCny(cfg.usdToCny);
 }
 
 /** Absolute amounts below 0.1 keep three decimals so small costs stay readable. */
