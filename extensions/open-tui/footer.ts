@@ -191,7 +191,7 @@ function renderStatsSegments(
 	}
 	return {
 		tokens: stats.join(` ${theme.fg("dim", "|")} `),
-		cost: segments.cost ? theme.fg("warning", `${glyphs.cost} $${totals.cost.toFixed(3)}`) : "",
+		cost: segments.cost ? theme.fg("warning", `$${totals.cost.toFixed(3)}`) : "",
 	};
 }
 

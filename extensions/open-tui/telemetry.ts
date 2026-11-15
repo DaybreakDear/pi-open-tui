@@ -349,7 +349,7 @@ export function formatTurnTelemetry(
 		parts.push(theme.fg("warning", `${glyphs.stall} stall ${telemetry.stallCount}x / ${formatTurnDuration(telemetry.stallMs)}`));
 	}
 	if (config.cost && telemetry.rateUsdPerMTokens !== null) {
-		parts.push(theme.fg("warning", `${glyphs.cost} $${telemetry.rateUsdPerMTokens.toFixed(2)}/M`));
+		parts.push(theme.fg("warning", `$${telemetry.rateUsdPerMTokens.toFixed(2)}/M`));
 	}
 	return parts.join(` ${theme.fg("dim", "|")} `);
 }

@@ -671,7 +671,6 @@ test("every icon mode provides every footer semantic", () => {
 		"input",
 		"output",
 		"cacheHit",
-		"cost",
 		"speed",
 		"latency",
 		"stall",
@@ -1009,7 +1008,7 @@ test("ASCII footer renders icons as semantic labels", () => {
 		"↑ 32k (U 27k + R 5.0k)",
 		"↓ 12",
 		"c 15.6%",
-		"$ $0.010",
+		"$0.010",
 		"& goal active",
 	]) {
 		assert.ok(output.includes(expected), `missing ${expected}\n${output}`);
