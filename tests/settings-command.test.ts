@@ -331,7 +331,10 @@ test("toggles the header without resetting a disabled slot and warns when persis
 	const pi = {
 		on: (event: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => handlers.set(event, handler),
 		events: createEventBus(),
-		registerCommand: (_name: string, options: { handler: typeof command }) => (command = options.handler),
+		registerCommand: (name: string, options: { handler: typeof command }) => {
+			// The extension registers more than one command; keep the settings one.
+			if (name === "open-tui") command = options.handler;
+		},
 		registerToolRenderer() {},
 		registerMarkdownTransformer() {},
 		registerShortcut() {},

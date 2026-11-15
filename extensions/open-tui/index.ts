@@ -1,9 +1,12 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { TuiMouseEvent } from "@earendil-works/pi-tui";
 import { type OpenTuiConfig, DEFAULT_CONFIG, ensureConfigExists, loadConfig, saveConfig } from "./config.ts";
 import { installCopyButtons, markCopyScope } from "./copy-buttons.ts";
 import { installMarkdownSkin, markSkinScope, resetMarkdownSkinSession } from "./markdown-skin.ts";
 import { installEditor } from "./editor.ts";
 import { installFooter } from "./footer.ts";
+import { readContextBlocks, watchContextBlocks, type ContextBlocksSnapshot } from "./context-blocks.ts";
+import { ContextBlocksOverlay } from "./context-blocks-overlay.ts";
 import { createSkinProvider, type SkinProvider } from "./theme.ts";
 import { createFooterSegments } from "./footer-segments.ts";
 import { installHeader } from "./header.ts";
@@ -55,6 +58,9 @@ export default function (pi: ExtensionAPI) {
 	let lastCtx: ExtensionContext | undefined;
 	let requestFooterRender: (() => void) | undefined;
 	let workingTimer: ReturnType<typeof setInterval> | undefined;
+	// The sidecar watcher lives only while the UI is installed; every teardown path unwatches it.
+	let stopContextBlocks: (() => void) | undefined;
+	let contextBlocks: ContextBlocksSnapshot | undefined;
 	let cleanupHeader: (() => void) | undefined;
 	let cleanupFooter: (() => void) | undefined;
 	let editor: ReturnType<typeof installEditor> | undefined;
@@ -123,6 +129,62 @@ export default function (pi: ExtensionAPI) {
 			peekSettleTimer = undefined;
 		}
 	};
+	const currentSessionFile = (ctx: ExtensionContext): string | undefined => {
+		try {
+			return ctx.sessionManager.getSessionFile();
+		} catch {
+			// In-memory sessions can throw here: no sidecar means no segment.
+			return undefined;
+		}
+	};
+
+	const stopContextBlocksWatch = (): void => {
+		stopContextBlocks?.();
+		stopContextBlocks = undefined;
+		contextBlocks = undefined;
+	};
+
+	const startContextBlocksWatch = (ctx: ExtensionContext): void => {
+		stopContextBlocksWatch();
+		if (!config.contextBlocks.enabled || !isTuiContext(ctx)) return;
+		const sessionFile = () => currentSessionFile(ctx);
+		if (!sessionFile()) return;
+		stopContextBlocks = watchContextBlocks(
+			sessionFile,
+			(snapshot) => {
+				contextBlocks = snapshot;
+				requestFooterRender?.();
+			},
+			config.contextBlocks.pollMs,
+		);
+	};
+
+	/** Read-only overlay: it reads the sidecar and never writes it or dispatches commands. */
+	const openContextBlocksOverlay = async (ctx: ExtensionContext): Promise<void> => {
+		if (!isTuiContext(ctx)) return;
+		await ctx.ui.custom<void>((tui, theme, _kb, done) => {
+			const overlay = new ContextBlocksOverlay(
+				tui,
+				theme,
+				() => readContextBlocks(currentSessionFile(ctx)),
+				() => done(undefined),
+			);
+			return {
+				capturesViewportInput: true,
+				render: (width: number) => overlay.render(width),
+				invalidate: () => overlay.invalidate(),
+				handleInput: (data: string) => {
+					overlay.handleInput(data);
+					tui.requestRender();
+				},
+				handleMouse: (event: TuiMouseEvent) => {
+					const result = overlay.handleMouse(event);
+					if (result?.handled && result.render !== false) tui.requestRender();
+					return result;
+				},
+			};
+		}, { overlay: true });
+	};
 	const applyUi = (ctx: ExtensionContext) => {
 		if (!isTuiContext(ctx)) return;
 		if (!config.enabled) {
@@ -148,6 +210,9 @@ export default function (pi: ExtensionAPI) {
 					},
 					getLiveTps: () => turnTelemetry.getLiveTps(),
 					getExtensionSegments: footerSegments.getSegments,
+					getContextBlocks: () => (config.contextBlocks.enabled && config.contextBlocks.footerSegment
+						? contextBlocks
+						: undefined),
 					getSkin: skin,
 					canEmbedInEditor: () => editor?.isFramed() ?? false,
 				},
@@ -171,11 +236,13 @@ export default function (pi: ExtensionAPI) {
 			});
 			active = true;
 			if (requestFooterRender) footerSegments.activate();
+			startContextBlocksWatch(ctx);
 		}
 	};
 
 	const uninstallUi = (ctx: ExtensionContext) => {
 		if (!isTuiContext(ctx)) return;
+		stopContextBlocksWatch();
 		gitRefresher.reset();
 		if (active) {
 			cleanupHeader?.();
@@ -270,6 +337,8 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", async (_event, ctx) => {
 		sessionLifecycle.shutdown();
+		// Always unwatch, even when the UI was never installed for this session.
+		stopContextBlocksWatch();
 		gitRefresher.reset();
 		stopWorkingTimer();
 		footerSegments.deactivate();
@@ -488,7 +557,20 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	pi.registerCommand("open-tui:context", {
+		description: "Show billion-context compression blocks (read-only)",
+		handler: async (_args: string, ctx: ExtensionContext) => {
+			await openContextBlocksOverlay(ctx);
+		},
+	});
+
 	// Registered on the extension lifecycle, not per session, so it stays live across sessions.
+	pi.registerShortcut("ctrl+shift+c", {
+		description: "Context compression blocks",
+		handler: (ctx: ExtensionContext) => {
+			void openContextBlocksOverlay(ctx);
+		},
+	});
 	pi.registerShortcut("ctrl+shift+m", {
 		description: "Toggle currency (USD/CNY)",
 		handler: (ctx: ExtensionContext) => {
