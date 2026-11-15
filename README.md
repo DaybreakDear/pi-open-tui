@@ -47,6 +47,25 @@ In `/open-tui`, **Appearance → Icons** offers `auto`, `nerd`, `unicode`, and `
 
 See [icon detection and spacing](./docs/configuration.md#icons) for automatic selection rules and the Kitty spacing option.
 
+## Themes
+
+`themes/` ships four Pi themes that restyle the whole Pi UI, not just this extension:
+
+| Theme | Appearance | Notes |
+| --- | --- | --- |
+| `tokyo-night` | dark | Cool blue-violet with distinct tool and thinking colours (recommended default) |
+| `catppuccin-mocha` | dark | Soft and low-saturation, comfortable for long sessions |
+| `gruvbox-dark` | dark | Warm retro palette with strong contrast |
+| `rose-pine-moon` | dark | Rose-violet colours on a dark background |
+
+Copy them into Pi's theme directory and switch with `/theme`:
+
+```bash
+mkdir -p ~/.pi/agent/themes && cp themes/*.json ~/.pi/agent/themes/ && /theme tokyo-night
+```
+
+Set `PI_CODING_AGENT_DIR` to use a different agent directory. Every theme fills all 56 Pi theme tokens, and `tests/themes.test.ts` checks each one against Pi's theme schema and requires at least 3:1 contrast for text, muted and dim text and for tool output.
+
 ## Configuration
 
 Run `/open-tui` to open the settings dialog. Its **General**, **Appearance**, **Footer**, and **Telemetry** tabs are available in English and Simplified Chinese and adapt to the terminal size. Use Tab/Shift+Tab or ←/→ to switch tabs, ↑/↓ to move, Enter/Space to change a value, and Esc/q to close.

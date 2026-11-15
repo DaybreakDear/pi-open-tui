@@ -47,6 +47,25 @@ pi -e npm:pi-open-tui
 
 自动选择规则和 Kitty 的间距选项见[图标检测与间距](./docs/configuration.md#图标)。
 
+## 主题
+
+`themes/` 提供四套 Pi 主题，可整体重绘 Pi 界面，而不只是本扩展：
+
+| 主题 | 配色 | 说明 |
+| --- | --- | --- |
+| `tokyo-night` | 深色 | 蓝紫冷调，工具与思考分色明显（推荐默认） |
+| `catppuccin-mocha` | 深色 | 柔和低饱和，长时间使用更舒适 |
+| `gruvbox-dark` | 深色 | 暖黄复古调色板，对比强烈 |
+| `rose-pine-moon` | 深色 | 暗底上的玫瑰紫配色 |
+
+复制到 Pi 的主题目录后，用 `/theme` 切换：
+
+```bash
+mkdir -p ~/.pi/agent/themes && cp themes/*.json ~/.pi/agent/themes/ && /theme tokyo-night
+```
+
+可通过 `PI_CODING_AGENT_DIR` 指定其他 agent 目录。四套主题都填满了 Pi 的全部 56 个主题 token，`tests/themes.test.ts` 会逐套对 Pi 的主题 schema 做校验，并要求正文、次要文字、更暗文字及工具输出达到至少 3:1 的对比度。
+
 ## 配置
 
 运行 `/open-tui` 打开设置窗口，包含**常规**、**外观**、**底栏**和**遥测**四个页面，支持英文和简体中文，并适应终端尺寸。Tab/Shift+Tab 或 ←/→ 切页，↑/↓ 移动，Enter/Space 修改值，Esc/q 关闭。
