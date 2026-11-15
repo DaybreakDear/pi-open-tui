@@ -1022,6 +1022,25 @@ test("ASCII footer renders icons as semantic labels", () => {
 	assert.equal(extensionStatusReads, 1);
 });
 
+test("footer renders the session cost through the currency formatter", () => {
+	const entries = [{
+		id: "usage-cost",
+		timestamp: Date.now(),
+		type: "message",
+		message: {
+			role: "assistant",
+			usage: { input: 10, output: 4, cacheRead: 0, cacheWrite: 0, cost: { total: 0.2345 } },
+		},
+	}];
+	const { component } = footerFixture({ entries });
+	const output = component.render(160).join("\n");
+
+	// One symbol, and the currency precision rule (>= 0.1 keeps two decimals).
+	const cost = output.match(/\$\d+\.\d+/)?.[0];
+	assert.equal(cost, "$0.23", `unexpected cost segment\n${output}`);
+	assert.equal(output.match(/\$/g)?.length, 1, `expected a single currency symbol\n${output}`);
+});
+
 function renderFooterWithSession(opts: {
 	sessionName?: string | null;
 	mode?: "nerd" | "ascii";

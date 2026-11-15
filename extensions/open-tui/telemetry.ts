@@ -10,6 +10,7 @@ import type {
 	Theme,
 } from "@earendil-works/pi-coding-agent";
 import type { IconMode, TelemetryConfig } from "./config.ts";
+import { DEFAULT_COST, formatRate, type CostConfig } from "./currency.ts";
 import { resolveGlyphs } from "./icons.ts";
 import { finiteOrZero, fmtTokens, formatDuration, formatInputBreakdown } from "./utils.ts";
 
@@ -328,6 +329,7 @@ export function formatTurnTelemetry(
 	theme: Theme,
 	config: TelemetryConfig,
 	iconMode: IconMode,
+	cost: CostConfig = DEFAULT_COST,
 ): string {
 	const glyphs = resolveGlyphs(iconMode);
 	const parts: string[] = [];
@@ -348,8 +350,7 @@ export function formatTurnTelemetry(
 	if (config.stalls && telemetry.stallMs > 0) {
 		parts.push(theme.fg("warning", `${glyphs.stall} stall ${telemetry.stallCount}x / ${formatTurnDuration(telemetry.stallMs)}`));
 	}
-	if (config.cost && telemetry.rateUsdPerMTokens !== null) {
-		parts.push(theme.fg("warning", `$${telemetry.rateUsdPerMTokens.toFixed(2)}/M`));
-	}
+	const rate = config.cost ? formatRate(telemetry.rateUsdPerMTokens, cost) : null;
+	if (rate !== null) parts.push(theme.fg("warning", rate));
 	return parts.join(` ${theme.fg("dim", "|")} `);
 }
