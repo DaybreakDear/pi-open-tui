@@ -15,7 +15,7 @@ import {
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 import type { CursorStyle, IconMode, OpenTuiConfig, SettingsLanguage, ThinkingPeekLines } from "./config.ts";
-import { RATE_STEPS } from "./currency.ts";
+import { currencySymbol, RATE_STEPS } from "./currency.ts";
 
 interface SettingItem {
 	id: string;
@@ -88,6 +88,7 @@ const COPY = {
 			costRate: "Price per 1M tokens",
 			currency: "Currency",
 			usdToCny: "USD→CNY rate",
+			currencySwitch: "Currency switching (ctrl+shift+m)",
 		},
 		values: {
 			on: "On",
@@ -97,10 +98,11 @@ const COPY = {
 			languages: { en: "English", zh: "简体中文" },
 			cursorStyles: { block: "Block", bar: "Bar", underline: "Underline" },
 			icons: { auto: "Auto", nerd: "Nerd", unicode: "Unicode", ascii: "ASCII" },
-			currencies: { usd: "USD $", cny: "CNY ¥" },
+			currencies: { usd: `USD ${currencySymbol("usd")}`, cny: `CNY ${currencySymbol("cny")}` },
 		},
 		notices: {
 			currencyLocked: "Currency switching is disabled. Enable it in open-tui settings.",
+			currencySwitched: (label: string) => `Currency switched to ${label}.`,
 		},
 	},
 	zh: {
@@ -154,6 +156,7 @@ const COPY = {
 			costRate: "每百万 Token 单价",
 			currency: "货币",
 			usdToCny: "汇率（USD→CNY）",
+			currencySwitch: "货币切换（ctrl+shift+m）",
 		},
 		values: {
 			on: "开启",
@@ -163,10 +166,11 @@ const COPY = {
 			languages: { en: "English", zh: "简体中文" },
 			cursorStyles: { block: "块", bar: "竖线", underline: "下划线" },
 			icons: { auto: "自动", nerd: "Nerd", unicode: "Unicode", ascii: "ASCII" },
-			currencies: { usd: "美元 $", cny: "人民币 ¥" },
+			currencies: { usd: `美元 ${currencySymbol("usd")}`, cny: `人民币 ${currencySymbol("cny")}` },
 		},
 		notices: {
 			currencyLocked: "货币切换已关闭。可在 open-tui 设置中开启。",
+			currencySwitched: (label: string) => `货币已切换为 ${label}。`,
 		},
 	},
 } as const;
@@ -267,6 +271,7 @@ function nextRateStep(current: number): number {
 }
 
 function buildIconsItems(config: OpenTuiConfig, copy: SettingsCopy): SettingGroup[] {
+	const flag = (value: boolean) => value ? copy.values.on : copy.values.off;
 	return [
 		{
 			label: copy.sections.icons,
@@ -278,6 +283,7 @@ function buildIconsItems(config: OpenTuiConfig, copy: SettingsCopy): SettingGrou
 				{ id: "cursorStyle", label: copy.labels.cursorStyle, currentValue: copy.values.cursorStyles[config.cursorStyle] },
 				{ id: "currency", label: copy.labels.currency, currentValue: copy.values.currencies[config.cost.currency] },
 				{ id: "usdToCny", label: copy.labels.usdToCny, currentValue: String(config.cost.usdToCny) },
+				{ id: "switchable", label: copy.labels.currencySwitch, currentValue: flag(config.cost.switchable) },
 			],
 		},
 	];
@@ -394,6 +400,9 @@ function handleSettingChange(
 		}
 		if (itemId === "usdToCny") {
 			return { ...config, cost: { ...config.cost, usdToCny: nextRateStep(config.cost.usdToCny) } };
+		}
+		if (itemId === "switchable") {
+			return { ...config, cost: { ...config.cost, switchable: !config.cost.switchable } };
 		}
 	}
 	if (tab === "segments") {

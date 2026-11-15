@@ -466,6 +466,7 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	// Registered on the extension lifecycle, not per session, so it stays live across sessions.
 	pi.registerShortcut("ctrl+shift+m", {
 		description: "Toggle currency (USD/CNY)",
 		handler: (ctx: ExtensionContext) => {
@@ -474,11 +475,11 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify(copy.notices.currencyLocked, "info");
 				return;
 			}
-			persistConfig({
-				...config,
-				cost: { ...config.cost, currency: config.cost.currency === "usd" ? "cny" : "usd" },
-			});
+			const currency = config.cost.currency === "usd" ? "cny" : "usd";
+			persistConfig({ ...config, cost: { ...config.cost, currency } });
 			requestFooterRender?.();
+			// Locked or not, the shortcut must always leave a visible trace: both cost segments may be off.
+			ctx.ui.notify(copy.notices.currencySwitched(copy.values.currencies[currency]), "info");
 		},
 	});
 }

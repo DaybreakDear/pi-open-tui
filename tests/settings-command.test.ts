@@ -557,6 +557,26 @@ test("steps the manual USD to CNY rate through a fixed ladder", async () => {
 	await settings.waitForClose();
 });
 
+test("toggles currency switching from the Appearance tab", async () => {
+	const settings = await openSettings();
+	settings.component.handleInput("\t");
+	// Appearance → Icon mode → Cursor style → Currency → USD→CNY rate → Currency switching
+	settings.press("\x1b[B", 4);
+	assert.match(selectedLine(settings.component), /Currency switching/);
+	assert.match(selectedLine(settings.component), /On/);
+
+	settings.component.handleInput("\r");
+	assert.equal(settings.getConfig().cost.switchable, false);
+	assert.match(selectedLine(settings.component), /Off/);
+
+	settings.component.handleInput("\r");
+	assert.equal(settings.getConfig().cost.switchable, true);
+	assert.match(selectedLine(settings.component), /On/);
+
+	settings.component.handleInput("q");
+	await settings.waitForClose();
+});
+
 test("a hand-edited rate steps up to the next ladder rung", async () => {
 	const config = structuredClone(DEFAULT_CONFIG);
 	// 7.4 is not on the ladder; a strict float lookup used to fall through to 6.8.
@@ -621,9 +641,15 @@ test("ctrl+shift+m toggles the currency and persists it", (t) => {
 
 	shortcut.handler(host.ctx);
 	assert.equal(loadConfig().cost.currency, "cny");
+	// Success must be visible: with every cost segment off the shortcut is otherwise silent.
+	assert.equal(host.notifications.length, 1);
+	assert.equal(host.notifications[0]?.level, "info");
+	assert.match(host.notifications[0]?.message ?? "", /CNY/);
+
 	shortcut.handler(host.ctx);
 	assert.equal(loadConfig().cost.currency, "usd");
-	assert.equal(host.notifications.length, 0);
+	assert.equal(host.notifications.length, 2);
+	assert.match(host.notifications[1]?.message ?? "", /USD/);
 });
 
 test("ctrl+shift+m is inert when switching is disabled", (t) => {
