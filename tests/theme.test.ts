@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
-import type { Theme, ToolRenderers } from "@earendil-works/pi-coding-agent";
+import { createEventBus, type ExtensionAPI, type ExtensionContext, type Theme, type ToolRenderers } from "@earendil-works/pi-coding-agent";
+import { DEFAULT_CONFIG } from "../extensions/open-tui/config.ts";
 import { resolveGlyphs } from "../extensions/open-tui/icons.ts";
+import openTui from "../extensions/open-tui/index.ts";
 import {
 	PRESET_SLOTS,
 	SLOT_TOKEN,
@@ -12,6 +16,7 @@ import {
 	type ThemeConfig,
 } from "../extensions/open-tui/theme.ts";
 import { createCompactRenderers } from "../extensions/open-tui/tool-view.ts";
+import { preserveEnvironment, temporaryDirectory } from "./fixtures/test-helpers.ts";
 
 const piThemeConfig: ThemeConfig = { preset: "pi", slots: {}, dividers: "line", gutter: true, banding: false };
 
@@ -38,6 +43,9 @@ function recordingTheme() {
 			styleCalls.push({ text, options });
 			return `<style>${text}`;
 		},
+		bold(text: string) {
+			return `<bold>${text}`;
+		},
 	} as unknown as Theme;
 	return { theme, fgCalls, styleCalls };
 }
@@ -45,7 +53,7 @@ function recordingTheme() {
 test("slots beat the preset", () => {
 	const cfg: ThemeConfig = { preset: "tokyo-night", slots: { thinking: "#ff0000" }, dividers: "line", gutter: true, banding: false };
 	assert.equal(resolveSlotColor(cfg, "thinking"), "#ff0000");
-	assert.equal(resolveSlotColor(cfg, "toolCall"), PRESET_SLOTS["tokyo-night"].toolCall);
+	assert.equal(resolveSlotColor(cfg, "toolCall"), "#bb9af7", "the preset's own palette colour");
 });
 
 test("preset 'pi' yields no override, so every slot falls through to its Pi token", () => {
@@ -130,9 +138,43 @@ test("a call-site fallback token only applies when no slot value resolves", () =
 	const { theme, fgCalls } = recordingTheme();
 	const piPainter = createPainter(theme, piThemeConfig);
 	assert.equal(piPainter.paint("toolCall", "●", "success"), "<fg:success>●");
-	const presetPainter = createPainter(theme, { ...piThemeConfig, preset: "tokyo-night" });
-	assert.equal(presetPainter.paint("toolCall", "●", "success"), "<style>●");
 	assert.deepEqual(fgCalls, [{ color: "success", text: "●" }]);
+});
+
+test("tool rows pick the slot by state, so a preset cannot swallow the status colour", () => {
+	const tokyoNight: ThemeConfig = { preset: "tokyo-night", slots: {}, dividers: "line", gutter: true, banding: false };
+	const skin = createSkinProvider(() => tokyoNight, () => 0);
+	const row = createCompactRenderers("read", undefined, () => resolveGlyphs("ascii"), undefined, false, undefined, skin);
+	const { theme, fgCalls, styleCalls } = recordingTheme();
+	// Regression: the status token used to be passed as the fallback, so the preset's toolCall colour
+	// (#bb9af7) won and a failed tool rendered purple instead of red.
+	const failed = row.renderCall!({ path: "/repo/src/a.ts" }, theme, callContext({ isError: true })).render(120);
+	assert.match(failed[0]!, /<fg:error>/, "a failed call paints with Pi's error token");
+	assert.deepEqual(styleCalls, [], "no preset colour may replace the status colour");
+	assert.equal(fgCalls.filter((call) => call.color === "error").length, 2, "the icon and the title both take error");
+
+	fgCalls.length = 0;
+	styleCalls.length = 0;
+	const done = row.renderCall!({ path: "/repo/src/a.ts" }, theme, callContext()).render(120);
+	assert.match(done[0]!, /<fg:success>/, "a finished call paints with Pi's success token");
+	assert.ok(styleCalls.length > 0, "the rest of the row keeps the preset's colours");
+});
+
+test("an unknown slot value falls back instead of throwing when the theme has no colour table", () => {
+	const fgCalls: string[] = [];
+	const tokens = new Set(["thinkingText", "toolTitle", "dim", "accent", "success", "error", "warning", "toolOutput"]);
+	// Shaped like Pi's own theme: an unknown name throws, and it used to throw inside render().
+	const theme = {
+		fg(color: string, text: string) {
+			if (!tokens.has(color)) throw new Error(`Unknown theme color: ${color}`);
+			fgCalls.push(color);
+			return `<fg:${color}>${text}`;
+		},
+	} as unknown as Theme;
+	// No `colors` table: the name cannot be checked up front, so the paint call has to be the gate.
+	const painter = createPainter(theme, { ...piThemeConfig, slots: { thinking: "chartreuse" } });
+	assert.equal(painter.paint("thinking", "…"), "<fg:thinkingText>…");
+	assert.deepEqual(fgCalls, ["thinkingText"]);
 });
 
 test("raw returns the same function paint would apply", () => {
@@ -144,6 +186,26 @@ test("raw returns the same function paint would apply", () => {
 });
 
 type RenderCallContext = Parameters<NonNullable<ToolRenderers["renderCall"]>>[2];
+
+function callContext(overrides: Partial<RenderCallContext> = {}): RenderCallContext {
+	return {
+		args: {},
+		toolCallId: "call-1",
+		invalidate() {},
+		lastComponent: undefined,
+		state: {},
+		cwd: "/repo",
+		executionStarted: true,
+		argsComplete: true,
+		isPartial: false,
+		expanded: false,
+		showImages: false,
+		isError: false,
+		durationMs: undefined,
+		outputPad: 1,
+		...overrides,
+	} as unknown as RenderCallContext;
+}
 
 test("the skin epoch busts the tool view's rendered-row cache", () => {
 	let epoch = 0;
@@ -183,4 +245,69 @@ test("the skin epoch busts the tool view's rendered-row cache", () => {
 	const callsAfterThemed = fgCalls.length;
 	assert.deepEqual(component.render(80), themed, "the rebuilt row is cached under the new epoch");
 	assert.equal(fgCalls.length, callsAfterThemed, "the new epoch's cache holds too");
+});
+
+type RendererFactory = Parameters<ExtensionAPI["registerToolRenderer"]>[0];
+
+test("the extension wires the configured theme into its painter and keeps the epoch for other changes", (t) => {
+	const agentDir = temporaryDirectory(t, "open-tui-skin-");
+	preserveEnvironment(t, ["PI_CODING_AGENT_DIR"]);
+	process.env.PI_CODING_AGENT_DIR = agentDir;
+	// The factory default preset is tokyo-night, which is what the painter has to read from the file.
+	writeFileSync(join(agentDir, "open-tui.json"), JSON.stringify({
+		...DEFAULT_CONFIG,
+		toolView: { mode: "compact", extensionTools: false, exclude: [] },
+	}));
+
+	let rendererFactory: RendererFactory | undefined;
+	let shortcut: ((ctx: ExtensionContext) => void) | undefined;
+	const handlers = new Map<string, (event: unknown, ctx: ExtensionContext) => unknown>();
+	const pi = {
+		on: (event: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => handlers.set(event, handler),
+		events: createEventBus(),
+		registerCommand() {},
+		registerShortcut: (key: string, options: { handler: (ctx: ExtensionContext) => void }) => {
+			if (key === "ctrl+shift+m") shortcut = options.handler;
+		},
+		registerToolRenderer: (factory: RendererFactory) => {
+			rendererFactory = factory;
+		},
+		registerMarkdownTransformer() {},
+		getAllTools: () => [{ name: "read", sourceInfo: { source: "builtin" } }],
+	} as unknown as ExtensionAPI;
+	const ctx = {
+		hasUI: true,
+		mode: "tui",
+		cwd: process.cwd(),
+		ui: {
+			setFooter() {},
+			setHeader() {},
+			getEditorComponent: () => undefined,
+			setEditorComponent() {},
+			notify() {},
+			custom: () => undefined,
+		},
+	} as unknown as ExtensionContext;
+	openTui(pi);
+	handlers.get("session_start")?.({ type: "session_start" }, ctx);
+	assert.ok(rendererFactory, "the extension must register its compact renderers");
+	assert.ok(shortcut, "ctrl+shift+m must be registered");
+
+	// A builtin tool without a native renderer of its own still gets the compact row.
+	const compact = rendererFactory("read", () => ({} as unknown as ToolRenderers));
+	assert.ok(compact);
+	const { theme, styleCalls } = recordingTheme();
+	const component = compact.renderCall!({ path: "a.ts" }, theme, callContext());
+	const rows = component.render(80);
+	// A preset literal proves the file's theme reached the painter: PI_THEME_CONFIG would paint tokens.
+	assert.match(rows[0]!, /<style>/, "the row uses the configured preset");
+	const painted = styleCalls.length;
+	assert.ok(painted > 0);
+	assert.deepEqual(component.render(80), rows, "an unchanged skin reuses the cached row");
+	assert.equal(styleCalls.length, painted);
+
+	// A cost change is not a theme change: the epoch must stay put and the row must stay cached.
+	shortcut!(ctx);
+	assert.deepEqual(component.render(80), rows, "the skin epoch survives a non-theme change");
+	assert.equal(styleCalls.length, painted, "a non-theme change must not repaint the row");
 });

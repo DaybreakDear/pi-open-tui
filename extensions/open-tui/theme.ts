@@ -165,8 +165,18 @@ function colorFn(theme: Theme, value: SlotValue | undefined, token: ThemeColor):
 			}
 		} else {
 			const known = (theme as { colors?: Record<string, unknown> }).colors;
-			if (known === undefined || Object.hasOwn(known, value)) {
-				return (text) => theme.fg(value as ThemeColor, text);
+			if (known !== undefined) {
+				if (Object.hasOwn(known, value)) return (text) => theme.fg(value as ThemeColor, text);
+			} else {
+				// Without a colour table the name cannot be verified up front, so the paint call is the gate:
+				// Pi throws on an unknown token, and a single bad slot value must not escape `render()`.
+				return (text) => {
+					try {
+						return theme.fg(value as ThemeColor, text);
+					} catch {
+						return theme.fg(token, text);
+					}
+				};
 			}
 		}
 	}

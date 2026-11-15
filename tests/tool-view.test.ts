@@ -961,7 +961,8 @@ test("failed rows stay compact with a red summary", () => {
 	const compact = createCompactRenderers("bash", renderers, glyphs);
 	const ctx = context({ isError: true, durationMs: 1200 });
 	assert.deepEqual(compact.renderCall!({ command: "npm test" }, tagged, ctx).render(80), [
-		" <error>● <toolTitle>Bash<muted>(npm test)",
+		// The title follows the error state instead of keeping the plain toolTitle colour.
+		" <error>● <error>Bash<muted>(npm test)",
 	]);
 	assert.deepEqual(
 		compact.renderResult!(text("a\nFAIL b.test.ts\n\nCommand exited with code 1"), { expanded: false, isPartial: false }, tagged, ctx).render(80),

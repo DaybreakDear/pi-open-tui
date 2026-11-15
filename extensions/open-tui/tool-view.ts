@@ -4,7 +4,7 @@ import type { ExtensionAPI, SourceInfo, Theme, ThemeColor, ToolRenderers } from 
 import { Box, type Component, getCapabilities, getImageDimensions, imageFallback, Spacer, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { ToolViewConfig } from "./config.ts";
 import type { IconGlyphs } from "./icons.ts";
-import { createPainter, type Painter, type SkinProvider, type ThemeConfig } from "./theme.ts";
+import { PI_THEME_CONFIG, createSkinProvider, type Painter, type SkinProvider, type ThemeConfig } from "./theme.ts";
 import { codeLines, prepareToolPreview } from "./tool-preview.ts";
 import { sanitizeStatus, stripAnsi } from "./utils.ts";
 
@@ -459,7 +459,7 @@ function formatElapsed(ms: number): string {
 
 /** Stable rows reuse their final lines until width, theme, skin epoch, icons, or invalidation changes them. */
 /** No skin configured: Pi's own tokens, epoch 0, which is exactly the v0.4.6 behaviour. */
-const piSkin: SkinProvider = (theme: Theme) => ({ painter: createPainter(theme), epoch: 0 });
+const piSkin: SkinProvider = createSkinProvider(() => PI_THEME_CONFIG, () => 0);
 /** No theme config supplied: no gutter, no banding, no dividers — the v0.4.6 rows. */
 const plainThemeConfig: ThemeConfig = { preset: "pi", slots: {}, dividers: "none", gutter: false, banding: false };
 
@@ -604,13 +604,18 @@ export function createCompactRenderers(
 			const color: ThemeColor = context.isError ? "error" : context.isPartial
 				? live && row.pulseBright !== false ? "accent" : "dim"
 				: "success";
-			const titleColor = context.isPartial || context.isError ? "toolTitle" : "dim";
+			// Pick the slot by state: a status token passed as the fallback is swallowed by any preset that
+			// styles the slot, so a failed tool stayed purple under the default tokyo-night preset.
+			const iconSlot = context.isError ? "error" : context.isPartial ? "toolCall" : "success";
+			const titleSlot = context.isError ? "error" : isShell ? "command" : "toolTitle";
+			// The error title must land on Pi's `error` token: any fallback would beat SLOT_TOKEN.error.
+			const titleToken: ThemeColor | undefined = context.isError ? undefined : context.isPartial ? "toolTitle" : "dim";
 			const callArgs = (args ?? {}) as Args;
 			const detail = sanitizeStatus(generic ? genericDetail(callArgs, context.cwd) : callDetail(toolName, callArgs, context.cwd));
 			const pad = " ".repeat(context.outputPad);
 			return lines((_width, icons, painter) => {
-				const call = pad + painter.paint("toolCall", icons.toolCall, color) + " "
-					+ painter.paint(isShell ? "command" : "toolTitle", titleColor === "dim" ? label : theme.bold(label), titleColor)
+				const call = pad + painter.paint(iconSlot, icons.toolCall, color) + " "
+					+ painter.paint(titleSlot, context.isPartial || context.isError ? theme.bold(label) : label, titleToken)
 					+ (detail ? theme.fg(context.isPartial || context.isError ? "muted" : "dim", `(${detail})`) : "");
 				// Pi does not call renderResult until the tool provides its first result.
 				// Read the shared flag during rendering, after both slots have been prepared.
