@@ -29,8 +29,10 @@ test("precision switches at 0.1 on the converted value", () => {
 	assert.equal(formatCost(0.1, usd), "$0.10");
 	assert.equal(formatCost(1.234, usd), "$1.23");
 	assert.equal(formatCost(0, usd), "$0.000");
-	// 0.0063 USD = 0.045 CNY stays below the threshold after conversion.
-	assert.equal(formatCost(0.02, cny), "¥0.143");
+	// 0.01 USD = 0.072 CNY stays below the threshold after conversion.
+	assert.equal(formatCost(0.01, cny), "¥0.072");
+	// 0.014 USD = 0.100 CNY crosses it, so the precision drops to two digits.
+	assert.equal(formatCost(0.014, cny), "¥0.10");
 });
 
 test("rate formatting", () => {
