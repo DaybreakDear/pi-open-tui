@@ -1285,3 +1285,41 @@ test("working timer shows live TPS gated by its footer setting and sheds it firs
 	state.lastDoneIn = 1_000;
 	assert.doesNotMatch(line(), /tok\/s/);
 });
+
+test("footer renders the context blocks segment from a snapshot", () => {
+	const snapshot = {
+		producer: "billion-context-pi",
+		blocks: [],
+		compressedTokens: 51_400,
+		blockCount: 3,
+		tiers: { 1: 2, 2: 1, 3: 0 },
+	};
+	const { component, config } = footerFixture({ hooks: { getContextBlocks: () => snapshot } });
+	config.icons.mode = "ascii";
+	const out = stripAnsi(component.render(160).join("\n"));
+
+	assert.ok(out.includes(`${resolveGlyphs("ascii").blocks} 3 · 51k`), `missing blocks segment\n${out}`);
+	// tokens | blocks | cost: the three right-hand segments stay separated once each.
+	assert.equal(out.match(/\s\|\s/g)?.length, 3, `unexpected separators\n${out}`);
+});
+
+test("footer leaves no empty context blocks segment without a snapshot", () => {
+	const entries = [{
+		id: "usage-blocks",
+		timestamp: Date.now(),
+		type: "message",
+		message: {
+			role: "assistant",
+			usage: { input: 10, output: 4, cacheRead: 0, cacheWrite: 0, cost: { total: 0.2345 } },
+		},
+	}];
+	const { component, config } = footerFixture({ entries });
+	config.icons.mode = "unicode";
+	const out = stripAnsi(component.render(160).join("\n"));
+
+	assert.ok(out.includes("$0.23"), `cost must stay on\n${out}`);
+	assert.equal(out.includes(resolveGlyphs("unicode").blocks), false, `blocks segment must stay absent\n${out}`);
+	// Only tokens and cost remain: an empty segment would leave a stray "| |".
+	assert.equal(out.match(/\s\|\s/g)?.length, 2, `double separator\n${out}`);
+	assert.doesNotMatch(out, /\|\s*\|/, `double separator\n${out}`);
+});

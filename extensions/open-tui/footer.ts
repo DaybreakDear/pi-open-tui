@@ -7,6 +7,7 @@ import type { FooterBuiltinSegment, FooterPosition, RegisteredFooterSegment } fr
 import type { IconGlyphs } from "./icons.ts";
 import { createPainter, type Painter, type Skin, type SkinProvider } from "./theme.ts";
 import { resolveGlyphs, resolveIconMode, runtimeSymbol } from "./icons.ts";
+import type { ContextBlocksSnapshot } from "./context-blocks.ts";
 import type { GitStatus } from "./git.ts";
 import type { RuntimeInfo } from "./runtime.ts";
 import type { LiveTps } from "./telemetry.ts";
@@ -181,8 +182,9 @@ function renderStatsSegments(
 	glyphs: IconGlyphs,
 	segments: OpenTuiConfig["footerSegments"],
 	cost: CostConfig,
+	blocksText: string,
 	painter: Painter,
-): { tokens: string; cost: string } {
+): { tokens: string; contextBlocks: string; cost: string } {
 	const stats: string[] = [];
 	if (segments.tokens) {
 		stats.push(painter.paint("stats", `${glyphs.input} ${formatInputBreakdown(totals.input, totals.cacheRead)}`));
@@ -196,6 +198,7 @@ function renderStatsSegments(
 	}
 	return {
 		tokens: stats.join(` ${painter.paint("divider", "|")} `),
+		contextBlocks: segments.contextBlocks ? blocksText : "",
 		cost: segments.cost ? painter.paint("cost", formatCost(totals.cost, cost)) : "",
 	};
 }
@@ -236,6 +239,7 @@ export interface FooterHooks {
 	scheduleGitRefresh: () => void;
 	getLiveTps?: () => LiveTps | null;
 	getExtensionSegments?: () => readonly RegisteredFooterSegment[];
+	getContextBlocks?: () => ContextBlocksSnapshot | undefined;
 	canEmbedInEditor?: () => boolean;
 	getSkin?: SkinProvider;
 }
@@ -297,11 +301,11 @@ type FooterLayoutMode = "plain" | "inline";
 const FOOTER_ANCHORS: Record<FooterLayoutMode, Record<1 | 2, Record<FooterSide, readonly FooterBuiltinSegment[]>>> = {
 	plain: {
 		1: { left: ["cwd", "hostname", "sessionName", "git", "runtime", "timer"], right: ["context"] },
-		2: { left: ["model"], right: ["tokens", "cost"] },
+		2: { left: ["model"], right: ["tokens", "contextBlocks", "cost"] },
 	},
 	inline: {
 		1: { left: ["sessionName", "git"], right: ["cwd", "hostname", "runtime", "timer", "context"] },
-		2: { left: ["model"], right: ["tokens", "cost"] },
+		2: { left: ["model"], right: ["tokens", "contextBlocks", "cost"] },
 	},
 };
 
@@ -379,6 +383,7 @@ function renderFooterContent(
 	width: number,
 	getLiveTps: () => LiveTps | null,
 	getExtensionSegments: () => readonly RegisteredFooterSegment[],
+	getContextBlocks: () => ContextBlocksSnapshot | undefined,
 	skin: SkinProvider,
 ): { mainLines: [string, string]; inlineLines: InlineFooterLines; extensionLines: string[] } {
 	if (width <= 0) {
@@ -404,6 +409,10 @@ function renderFooterContent(
 	}
 	const meta = getModelMeta();
 	const totals = getUsageTotals(ctx);
+	const blocks = getContextBlocks();
+	const blocksText = blocks
+		? `${theme.fg("dim", glyphs.blocks)} ${painter.paint("stats", `${blocks.blockCount} ${painter.paint("divider", "·")} ${fmtTokens(blocks.compressedTokens)}`)}`
+		: "";
 	const builtins: Partial<Record<FooterBuiltinSegment, PrioritizedSegment>> = {};
 	const contributions = segments.extensionSegments
 		? getExtensionSegments().filter((segment) => visibleWidth(segment.text) > 0)
@@ -528,10 +537,11 @@ function renderFooterContent(
 		modelParts.push(painter.paint("thinking", `${glyphs.thinking} ${meta.effort}`, effortColor(meta.effort)));
 	}
 	const modelBlock = modelParts.join(painter.paint("divider", " · "));
-	const stats = renderStatsSegments(theme, totals, glyphs, segments, config.cost, painter);
-	const statsBlock = [stats.tokens, stats.cost].filter(Boolean).join(` ${painter.paint("divider", "|")} `);
+	const stats = renderStatsSegments(theme, totals, glyphs, segments, config.cost, blocksText, painter);
+	const statsBlock = [stats.tokens, stats.contextBlocks, stats.cost].filter(Boolean).join(` ${painter.paint("divider", "|")} `);
 	builtins.model = { text: modelBlock, priority: 0 };
 	builtins.tokens = { text: stats.tokens, priority: 2 };
+	builtins.contextBlocks = { text: stats.contextBlocks, priority: 1 };
 	builtins.cost = { text: stats.cost, priority: 1 };
 	const contributedBottom = fitContributedRow(2, "plain", builtins, contributions, width, theme, painter);
 	const inlineBottom = contributedBottom ?? fitInlineLine(modelBlock, statsBlock, width, theme);
@@ -591,6 +601,7 @@ export function installFooter(
 			width,
 			hooks.getLiveTps ?? (() => null),
 			hooks.getExtensionSegments ?? (() => []),
+			hooks.getContextBlocks ?? (() => undefined),
 			hooks.getSkin ?? defaultSkin,
 		);
 

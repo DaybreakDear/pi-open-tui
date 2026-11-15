@@ -158,3 +158,20 @@ test("an unknown key inside the cost block survives", (t) => {
 	assert.equal(config.cost.usdToCny, 7.4);
 	assert.equal(config.cost.switchable, false);
 });
+
+test("defaults the context blocks block and clamps the poll interval", (t) => {
+	assert.deepEqual(DEFAULT_CONFIG.contextBlocks, { enabled: true, footerSegment: true, pollMs: 1500 });
+	assert.equal(DEFAULT_CONFIG.footerSegments.contextBlocks, true);
+
+	const defaults = configWith(t, {});
+	assert.deepEqual(defaults.contextBlocks, DEFAULT_CONFIG.contextBlocks);
+
+	const kept = configWith(t, { contextBlocks: { enabled: false, footerSegment: false, pollMs: 500 } });
+	assert.deepEqual(kept.contextBlocks, { enabled: false, footerSegment: false, pollMs: 500 });
+
+	// A poll interval that would hammer the disk, or one that is not a number, falls back to the default.
+	const clamped = configWith(t, { contextBlocks: { pollMs: 5, enabled: "yes" } });
+	assert.equal(clamped.contextBlocks.pollMs, 250);
+	assert.equal(clamped.contextBlocks.enabled, true);
+	assert.equal(clamped.contextBlocks.footerSegment, true);
+});

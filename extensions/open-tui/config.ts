@@ -24,6 +24,8 @@ export interface FooterSegments {
 	context: boolean;
 	/** Context progress bar and its icon; off keeps the percentage and token usage. */
 	contextBar: boolean;
+	/** billion-context compression blocks (read-only sidecar). */
+	contextBlocks: boolean;
 	tokens: boolean;
 	cost: boolean;
 	liveTps: boolean;
@@ -47,6 +49,15 @@ export interface ThinkingPeekConfig {
 	lines: ThinkingPeekLines;
 	/** Append `12.3s · 1.2k tok` to the thinking header; false restores the v0.4.6 label. */
 	showCounts: boolean;
+}
+
+export interface ContextBlocksConfig {
+	/** Read the billion-context sidecar and show it in the footer and the overlay. */
+	enabled: boolean;
+	/** Footer segment on/off; the overlay stays reachable from its shortcut either way. */
+	footerSegment: boolean;
+	/** `fs.watchFile` poll interval in milliseconds. */
+	pollMs: number;
 }
 
 export interface ToolViewConfig {
@@ -77,6 +88,8 @@ export interface OpenTuiConfig {
 	cost: CostConfig;
 	/** open-tui's own colours (slots) and the structural options built on them. */
 	theme: ThemeConfig;
+	/** billion-context sidecar (read-only) blocks: footer segment and overlay. */
+	contextBlocks: ContextBlocksConfig;
 }
 
 /** The shipped expand-hint mode; `"plain"` keeps the v0.4.6 rendering. */
@@ -102,6 +115,7 @@ export const DEFAULT_CONFIG: OpenTuiConfig = {
 		runtime: true,
 		context: true,
 		contextBar: true,
+		contextBlocks: true,
 		tokens: true,
 		cost: true,
 		liveTps: true,
@@ -127,6 +141,11 @@ export const DEFAULT_CONFIG: OpenTuiConfig = {
 		mode: "native",
 		extensionTools: false,
 		exclude: [],
+	},
+	contextBlocks: {
+		enabled: true,
+		footerSegment: true,
+		pollMs: 1500,
 	},
 	cost: DEFAULT_COST,
 	theme: {
@@ -209,6 +228,23 @@ function normalizeCost(value: unknown): CostConfig {
 	const usdToCny = clampUsdToCny(source.usdToCny);
 	const switchable = typeof source.switchable === "boolean" ? source.switchable : DEFAULT_COST.switchable;
 	return { ...source, currency, usdToCny, switchable };
+}
+
+const MIN_CONTEXT_BLOCKS_POLL_MS = 250;
+const MAX_CONTEXT_BLOCKS_POLL_MS = 60_000;
+
+/** Invalid flags and poll intervals fall back field by field; unknown sibling keys survive. */
+function normalizeContextBlocks(value: unknown): ContextBlocksConfig {
+	const source = isRecord(value) ? value : {};
+	const pollMs = typeof source.pollMs === "number" && Number.isFinite(source.pollMs)
+		? Math.min(MAX_CONTEXT_BLOCKS_POLL_MS, Math.max(MIN_CONTEXT_BLOCKS_POLL_MS, Math.round(source.pollMs)))
+		: DEFAULT_CONFIG.contextBlocks.pollMs;
+	return {
+		...source,
+		enabled: typeof source.enabled === "boolean" ? source.enabled : DEFAULT_CONFIG.contextBlocks.enabled,
+		footerSegment: typeof source.footerSegment === "boolean" ? source.footerSegment : DEFAULT_CONFIG.contextBlocks.footerSegment,
+		pollMs,
+	};
 }
 
 // Non-boolean flags (e.g. "false" strings) fall back to defaults instead of reading as truthy.
@@ -300,6 +336,7 @@ export function loadConfig(notify?: (msg: string, level: "warning" | "info") => 
 		config.toolView = normalizeToolView(config.toolView);
 		config.cost = normalizeCost(config.cost);
 		config.theme = normalizeTheme(config.theme);
+		config.contextBlocks = normalizeContextBlocks(config.contextBlocks);
 		return config;
 	} catch (err) {
 		notify?.(`open-tui config parse error: ${err instanceof Error ? err.message : String(err)}`, "warning");

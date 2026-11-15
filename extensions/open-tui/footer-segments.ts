@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { sanitizeStatusPreservingStyles } from "./utils.ts";
 
 const BUILTIN_SEGMENTS = [
-	"cwd", "hostname", "sessionName", "git", "runtime", "timer", "context", "model", "tokens", "cost",
+	"cwd", "hostname", "sessionName", "git", "runtime", "timer", "context", "model", "tokens", "contextBlocks", "cost",
 ] as const;
 
 export type FooterBuiltinSegment = typeof BUILTIN_SEGMENTS[number];
