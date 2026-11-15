@@ -644,3 +644,36 @@ if (known === undefined || Object.hasOwn(known, value))
 - `skinEpoch` 确实在缓存键里（`tool-view.ts:478` 比较 / `:481` 写入）且 `index.ts:426` 自增
 - `footer.test.ts:1016-1017` 是真门（旧的裸 `includes` 会被 `"$ $0.010"` 蒙混过关）
 - `theme.test.ts:58`（`SLOT_TOKEN` deepEqual）与 `:148-185`（epoch）是真门
+
+---
+
+## T2c 修复轮（复审行动项）
+
+复审 `532503b..58ac9f1` 结论 **ACCEPT**。确认事项：
+- 非 `pi` 预设下，失败**和**成功两种状态都正确渲染 `error`/`success` token
+- `titleToken` 在状态分支传 `undefined`，所以 `SLOT_TOKEN.error` 能生效
+- `expandHint: "plain"` 输出与 v0.4.6 逐字节一致
+- 宽度中性成立：下划线只增加字节，截断在着色后进行，预算不溢出
+
+### G1（必须修）键帽不是键帽
+
+设计约定 `expandHint: "key"` = **键帽提亮 + 下划线**。实际只有提亮，渲染结果里
+根本没有下划线 SGR 序列 —— 用户要的「略微突出显示」只兑现了一半。
+
+根因：`theme.style()` 最终走 `chalk`，`chalk` 的 `underline` 在这条路径上被丢弃
+（与 `theme.underline === chalk.underline` 在 color level 0 被剥 ANSI 是同一个坑）。
+
+**做法**：下划线用原始 SGR 发出来（把键帽包进 `\x1b[4m…\x1b[24m`），
+或给 chalk 显式 level；然后加一条测试，断言 `"key"` 模式下输出里**真的存在**
+下划线序列。现有 `tests/hint.test.ts` 的 `\x1b[4m` 断言今天能过恰恰是因为
+它没有真正校验（见 G2）。
+
+### G2（同批修）下划线断言不是门
+
+`tests/hint.test.ts` 里对该序列的断言必须断言**存在**，而不是只验证 color level。
+修完 G1 后这条测试必须先红再绿。
+
+### 其余 NIT（可延后到 T5）
+
+- `expandHint` 目前只能在配置文件里改，没有设置行；`README` 文档归 T5
+- `skinEpoch` 的深/浅比较已核实不会每次都自增（不要再动）
