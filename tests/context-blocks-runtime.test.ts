@@ -3,8 +3,9 @@ import fs, { readFileSync, statSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { createEventBus, type ExtensionAPI, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
-import { visibleWidth, type KeybindingsManager, type TUI, type TuiMouseEvent } from "@earendil-works/pi-tui";
+import { matchesKey, visibleWidth, type KeybindingsManager, type TUI, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import { DEFAULT_CONFIG } from "../extensions/open-tui/config.ts";
 import { readContextBlocks } from "../extensions/open-tui/context-blocks.ts";
 import { ContextBlocksOverlay } from "../extensions/open-tui/context-blocks-overlay.ts";
@@ -60,6 +61,14 @@ function writeSidecar(sessionFile: string, value: unknown = SIDECAR): string {
 	const path = `${sessionFile}.acp.json`;
 	writeFileSync(path, JSON.stringify(value), "utf8");
 	return path;
+}
+
+async function waitFor(predicate: () => boolean, message: string): Promise<void> {
+	const deadline = performance.now() + 10_000;
+	while (!predicate()) {
+		assert.ok(performance.now() < deadline, message);
+		await delay(10);
+	}
 }
 
 function renderText(lines: readonly string[]): string {
@@ -301,7 +310,8 @@ test("the footer shows the blocks segment only while the sidecar exists", async 
 	assert.doesNotMatch(without, /# 2 · 3\.4k/);
 
 	writeSidecar(sessionFile);
-	await new Promise((resolve) => setTimeout(resolve, 600));
+	// The SidecarWatcher polls at 250 ms: poll the render instead of racing a fixed sleep.
+	await waitFor(() => /# 2 · 3.4k/.test(renderFooter(factory, tui)), "the watch must deliver the new sidecar");
 	const withBlocks = renderFooter(factory, tui);
 	assert.match(withBlocks, /# 2 · 3\.4k/);
 
@@ -481,4 +491,11 @@ test("a schema mismatch is reported through the notify channel", async (t) => {
 	assert.equal(host.notifications.length, 1, `expected one notify, got ${JSON.stringify(host.notifications)}`);
 	assert.match(host.notifications[0]!, /schemaVersion 2/);
 	assert.doesNotMatch(renderFooter(factory, fakeTui(120, 40)), /# 2 · 3\.4k/, "a mismatched sidecar must not paint a segment");
+});
+
+test("the ctrl+shift+c chord matches the bytes Pi sends", () => {
+	// Pi encodes ctrl+shift+c as CSI 99;6u. If Pi ever changes how it spells the
+	// chord, this fails here instead of the shortcut silently going dark.
+	assert.equal(matchesKey("\x1b[99;6u", "ctrl+shift+c"), true);
+	assert.equal(matchesKey("\x1b[99;5u", "ctrl+shift+c"), false, "ctrl+c must not open the overlay");
 });

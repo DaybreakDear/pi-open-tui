@@ -1299,11 +1299,14 @@ test("footer renders the context blocks segment from a snapshot", () => {
 	const out = stripAnsi(component.render(160).join("\n"));
 
 	assert.ok(out.includes(`${resolveGlyphs("ascii").blocks} 3 · 51k`), `missing blocks segment\n${out}`);
-	// tokens | blocks | cost: the three right-hand segments stay separated once each.
-	assert.equal(out.match(/\s\|\s/g)?.length, 3, `unexpected separators\n${out}`);
+	// The blocks segment brings exactly one separator with it and nothing else moves.
+	const without = stripAnsi(footerFixture({ hooks: {} }).component.render(160).join("\n"));
+	const dividers = (text: string) => text.match(/\s\|\s/g)?.length ?? 0;
+	assert.equal(dividers(out) - dividers(without), 1, `the blocks segment must add one separator\n${out}\nvs\n${without}`);
+	assert.doesNotMatch(out, /\|\s*\|/, `double separator\n${out}`);
 });
 
-test("footer leaves no empty context blocks segment without a snapshot", () => {
+test("footer drops the blocks segment and its separator without a snapshot", () => {
 	const entries = [{
 		id: "usage-blocks",
 		timestamp: Date.now(),
@@ -1313,13 +1316,34 @@ test("footer leaves no empty context blocks segment without a snapshot", () => {
 			usage: { input: 10, output: 4, cacheRead: 0, cacheWrite: 0, cost: { total: 0.2345 } },
 		},
 	}];
-	const { component, config } = footerFixture({ entries });
+	const snapshot = {
+		producer: "billion-context-pi",
+		blocks: [],
+		compressedTokens: 51_400,
+		blockCount: 3,
+		tiers: { 1: 2, 2: 1, 3: 0 },
+	};
+	// The hook is the only thing that decides: a snapshot paints the segment and its
+	// separator, nothing paints neither. Both consumers already run `filter(Boolean)`,
+	// so the gate is the pair of renders, not a hard-coded join count.
+	let blocks: typeof snapshot | undefined;
+	const { component, config } = footerFixture({ entries, hooks: { getContextBlocks: () => blocks } });
 	config.icons.mode = "unicode";
-	const out = stripAnsi(component.render(160).join("\n"));
+	const glyph = resolveGlyphs("unicode").blocks;
+	const render = () => stripAnsi(component.render(160).join("\n"));
+	const dividers = (text: string) => text.match(/\s\|\s/g)?.length ?? 0;
 
-	assert.ok(out.includes("$0.23"), `cost must stay on\n${out}`);
-	assert.equal(out.includes(resolveGlyphs("unicode").blocks), false, `blocks segment must stay absent\n${out}`);
-	// Only tokens and cost remain: an empty segment would leave a stray "| |".
-	assert.equal(out.match(/\s\|\s/g)?.length, 2, `double separator\n${out}`);
-	assert.doesNotMatch(out, /\|\s*\|/, `double separator\n${out}`);
+	const without = render();
+	assert.ok(without.includes("$0.23"), `cost must stay on\n${without}`);
+	assert.equal(without.includes(glyph), false, `blocks segment must stay absent\n${without}`);
+
+	blocks = snapshot;
+	const withBlocks = render();
+	assert.ok(withBlocks.includes(`${glyph} 3 · 51k`), `missing blocks segment\n${withBlocks}`);
+	assert.equal(
+		dividers(withBlocks) - dividers(without),
+		1,
+		`the segment must bring exactly one separator\n${withBlocks}\nvs\n${without}`,
+	);
+	assert.doesNotMatch(without, /\|\s*\|/, `double separator\n${without}`);
 });
