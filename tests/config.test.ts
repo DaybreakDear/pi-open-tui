@@ -121,6 +121,13 @@ test("keeps a valid theme block", (t) => {
 	});
 });
 
+test("falls back on a non-boolean userBar and thinking peek counts", (t) => {
+	const config = configWith(t, { theme: { userBar: "yes" }, thinkingPeek: { lines: 2, showCounts: "no" } });
+	assert.equal(config.theme.userBar, DEFAULT_THEME.userBar);
+	assert.equal(config.thinkingPeek.showCounts, true);
+	assert.equal(config.thinkingPeek.lines, 2, "a bad showCounts must not reset the line count");
+});
+
 test("falls back per field on invalid theme values", (t) => {
 	const config = configWith(t, { theme: { preset: "solarized", dividers: "wavy", gutter: "yes", banding: 1, expandHint: "sparkle" } });
 	assert.equal(config.theme.preset, "tokyo-night");

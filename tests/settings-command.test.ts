@@ -643,6 +643,13 @@ test("cycles dividers and toggles the theme structure from the Appearance tab", 
 	settings.component.handleInput("\r");
 	assert.equal(settings.getConfig().theme.banding, true);
 
+	settings.component.handleInput("\x1b[B");
+	assert.match(selectedLine(settings.component), /User message rail/);
+	assert.match(selectedLine(settings.component), /On/);
+	settings.component.handleInput("\r");
+	assert.equal(settings.getConfig().theme.userBar, false);
+	assert.match(selectedLine(settings.component), /Off/);
+
 	settings.component.handleInput("q");
 	await settings.waitForClose();
 });

@@ -96,6 +96,7 @@ const COPY = {
 			dividers: "Dividers",
 			gutter: "Tool gutter",
 			banding: "Row banding",
+			userBar: "User message rail",
 		},
 		values: {
 			on: "On",
@@ -171,6 +172,7 @@ const COPY = {
 			dividers: "分割线",
 			gutter: "工具竖线",
 			banding: "行底色",
+			userBar: "用户消息竖条",
 		},
 		values: {
 			on: "开启",
@@ -330,6 +332,7 @@ function buildIconsItems(config: OpenTuiConfig, copy: SettingsCopy): SettingGrou
 				{ id: "dividers", label: copy.labels.dividers, currentValue: copy.values.dividers[config.theme.dividers] },
 				{ id: "themeGutter", label: copy.labels.gutter, currentValue: flag(config.theme.gutter) },
 				{ id: "themeBanding", label: copy.labels.banding, currentValue: flag(config.theme.banding) },
+				{ id: "themeUserBar", label: copy.labels.userBar, currentValue: flag(config.theme.userBar) },
 			],
 		},
 	];
@@ -457,6 +460,7 @@ function handleSettingChange(
 		if (itemId === "dividers") return cycleDividers(config);
 		if (itemId === "themeGutter") return { ...config, theme: { ...config.theme, gutter: !config.theme.gutter } };
 		if (itemId === "themeBanding") return { ...config, theme: { ...config.theme, banding: !config.theme.banding } };
+		if (itemId === "themeUserBar") return { ...config, theme: { ...config.theme, userBar: !config.theme.userBar } };
 	}
 	if (tab === "segments") {
 		return toggleSetting(config, itemId as keyof OpenTuiConfig["footerSegments"]);
