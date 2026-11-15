@@ -166,6 +166,19 @@ export default function (pi: ExtensionAPI) {
 		);
 	};
 
+	/**
+	 * Design §3.4 wants an active read after a settled turn or a compaction: the
+	 * watch alone lags up to `pollMs`, and it may never have been armed (the session
+	 * file is not known at install time, so `startContextBlocksWatch` bails).
+	 */
+	const refreshContextBlocks = (ctx: ExtensionContext): void => {
+		if (!config.contextBlocks.enabled || !isTuiContext(ctx)) return;
+		// Nothing armed means the watcher bailed earlier: re-arm now that the file is known.
+		if (!stopContextBlocks) startContextBlocksWatch(ctx);
+		contextBlocks = readContextBlocks(currentSessionFile(ctx));
+		requestFooterRender?.();
+	};
+
 	/** Read-only overlay: it reads the sidecar and never writes it or dispatches commands. */
 	const openContextBlocksOverlay = async (ctx: ExtensionContext): Promise<void> => {
 		if (!isTuiContext(ctx)) return;
@@ -451,6 +464,7 @@ export default function (pi: ExtensionAPI) {
 			resetPeek();
 			clearPeekLabel(ctx);
 		}, 300);
+		refreshContextBlocks(ctx);
 	});
 
 	pi.on("model_select", (_event, ctx) => {
@@ -482,6 +496,8 @@ export default function (pi: ExtensionAPI) {
 		if (!sessionLifecycle.isCurrent()) return;
 		invalidateUsageCache();
 		refreshInteractiveState(ctx);
+		// A compaction moves tokens between blocks: read it now, not on the next poll.
+		refreshContextBlocks(ctx);
 	});
 
 	pi.on("session_tree", (_event, ctx) => {

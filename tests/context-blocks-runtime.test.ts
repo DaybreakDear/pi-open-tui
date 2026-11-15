@@ -71,6 +71,8 @@ function runtimeHost(t: TestContext, sessionFile: string | undefined, raw: Parti
 	const agentDir = temporaryDirectory(t, "pi-open-tui-context-");
 	preserveEnvironment(t, ["PI_CODING_AGENT_DIR"]);
 	process.env.PI_CODING_AGENT_DIR = agentDir;
+	// A session can learn its file late (in-memory startup), so the host can change it.
+	let currentSessionFile = sessionFile;
 	writeFileSync(join(agentDir, "open-tui.json"), JSON.stringify({ ...structuredClone(DEFAULT_CONFIG), ...raw }));
 
 	const handlers = new Map<string, Array<(event: unknown, ctx: ExtensionContext) => unknown>>();
@@ -107,7 +109,7 @@ function runtimeHost(t: TestContext, sessionFile: string | undefined, raw: Parti
 		getContextUsage: () => undefined,
 		model: undefined,
 		sessionManager: {
-			getSessionFile: () => sessionFile,
+			getSessionFile: () => currentSessionFile,
 			getLeafId: () => "leaf-1",
 			getEntries: () => [],
 			getCwd: () => process.cwd(),
@@ -140,6 +142,13 @@ function runtimeHost(t: TestContext, sessionFile: string | undefined, raw: Parti
 		customOptions: () => customOptions,
 		customFactory: () => customFactory,
 		footerFactory: () => footerFactory,
+		setSessionFile: (next: string | undefined) => {
+			currentSessionFile = next;
+		},
+		/** Fire a Pi event through the handlers the extension registered. */
+		emit: async (event: string, payload: unknown) => {
+			for (const handler of handlers.get(event) ?? []) await handler(payload, ctx);
+		},
 		start: async () => {
 			for (const handler of handlers.get("session_start") ?? []) {
 				await handler({ type: "session_start", reason: "startup" }, ctx);
@@ -384,4 +393,46 @@ test("a click on a block row selects that block", (t) => {
 	for (const y of [0, 1, 2, 3, lines.length - 2, lines.length - 1]) {
 		assert.equal(chrome.handleMouse(press(y)), undefined, `chrome row ${y} must not select a block\n${lines.join("\n")}`);
 	}
+});
+
+test("a settled turn re-arms the watch a session could not start", async (t) => {
+	const dir = temporaryDirectory(t, "pi-open-tui-blocks-");
+	const sessionFile = join(dir, "session.jsonl");
+	// In-memory startup: `startContextBlocksWatch` bails and nothing else arms the watch.
+	const host = runtimeHost(t, undefined, { contextBlocks: { ...DEFAULT_CONFIG.contextBlocks, pollMs: 60_000 } });
+	await host.start();
+	const factory = host.footerFactory();
+	assert.ok(factory, "the footer must be installed");
+	const tui = fakeTui(120, 40);
+	assert.doesNotMatch(renderFooter(factory, tui), /# 2 · 3\.4k/);
+
+	// The session gains a file mid-run; the sidecar is already there.
+	host.setSessionFile(sessionFile);
+	writeSidecar(sessionFile);
+	await host.emit("agent_settled", { type: "agent_settled" });
+	assert.match(renderFooter(factory, tui), /# 2 · 3\.4k/);
+});
+
+test("a settled turn and a compaction re-read the sidecar before the poll", async (t) => {
+	const dir = temporaryDirectory(t, "pi-open-tui-blocks-");
+	const sessionFile = join(dir, "session.jsonl");
+	// A minute-long poll: only an active re-read can refresh the segment in time.
+	const host = runtimeHost(t, sessionFile, { contextBlocks: { ...DEFAULT_CONFIG.contextBlocks, pollMs: 60_000 } });
+	await host.start();
+	const factory = host.footerFactory();
+	assert.ok(factory, "the footer must be installed");
+	const tui = fakeTui(120, 40);
+	assert.doesNotMatch(renderFooter(factory, tui), /# 2 · 3\.4k/);
+
+	writeSidecar(sessionFile);
+	await host.emit("agent_settled", { type: "agent_settled" });
+	assert.match(renderFooter(factory, tui), /# 2 · 3\.4k/, "agent_settled must read the new sidecar");
+
+	// A compaction folds the blocks; the next event must show the new count.
+	await new Promise((resolve) => setTimeout(resolve, 10));
+	writeSidecar(sessionFile, { ...SIDECAR, blocks: SIDECAR.blocks.slice(0, 1) });
+	await host.emit("session_compact", { type: "session_compact" });
+	const compacted = renderFooter(factory, tui);
+	assert.match(compacted, /# 1 · 2\.5k/, `session_compact must read the new sidecar\n${compacted}`);
+	assert.doesNotMatch(compacted, /# 2 · 3\.4k/);
 });
