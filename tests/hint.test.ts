@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { theme as piTheme } from "../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 import { visibleWidth } from "@earendil-works/pi-tui";
@@ -35,6 +37,33 @@ test("key mode underlines only the keycap and keeps the body dim", () => {
 	assert.equal(stripAnsi(out), `${HEAD} ${HINT_TEXT}`, "the text itself is untouched");
 	assert.ok(out.startsWith(piTheme.fg("dim", HEAD)), "the head keeps the row's span");
 	assert.ok(out.endsWith(piTheme.fg("dim", ` ${HINT_TAIL})`)), "the tail stays dim");
+});
+
+// The gate the in-process assertion cannot be: chalk's own level is 0 under `node --test` (and
+// `theme.style`/`theme.underline` drop the attribute there), so the underline is proved in a child
+// process started with `FORCE_COLOR=3` — a real terminal's colour level. Delete `UNDERLINE_ON` from
+// `keycap()` and this fails.
+test("key mode emits the underline in a colour-enabled process", () => {
+	const root = fileURLToPath(new URL("../", import.meta.url));
+	const moduleUrl = (relative: string) => pathToFileURL(join(root, relative)).href;
+	const program = [
+		`import { initTheme } from ${JSON.stringify(moduleUrl("node_modules/@earendil-works/pi-coding-agent/dist/index.js"))};`,
+		`import { theme } from ${JSON.stringify(moduleUrl("node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js"))};`,
+		`import { formatExpandHint } from ${JSON.stringify(moduleUrl("extensions/open-tui/hint.ts"))};`,
+		`initTheme("dark");`,
+		`process.stdout.write(formatExpandHint(theme, "key", ${JSON.stringify(HEAD)}, (text) => theme.fg("dim", text)));`,
+	].join("\n");
+	const child = spawnSync(process.execPath, ["--input-type=module", "-e", program], {
+		cwd: root,
+		env: { ...process.env, FORCE_COLOR: "3", NO_COLOR: undefined },
+		encoding: "utf8",
+	});
+	assert.equal(child.status, 0, child.stderr);
+	const out = child.stdout;
+	assert.ok(out.includes("\x1b[4m"), `no underline at colour level 3: ${JSON.stringify(out)}`);
+	assert.equal(out.split("\x1b[4m").length - 1, 1, "one underline opens");
+	assert.equal(out.split("\x1b[24m").length - 1, 1, "and closes once");
+	assert.equal(stripAnsi(out), `${HEAD} ${HINT_TEXT}`, "the underline adds bytes, not text");
 });
 
 // The shape a colour-disabled process gives the renderer: `fg` paints nothing, as the repo's other
