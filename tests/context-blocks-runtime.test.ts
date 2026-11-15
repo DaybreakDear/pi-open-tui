@@ -4,7 +4,7 @@ import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { createEventBus, type ExtensionAPI, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
-import type { KeybindingsManager, TUI } from "@earendil-works/pi-tui";
+import { visibleWidth, type KeybindingsManager, type TUI } from "@earendil-works/pi-tui";
 import { DEFAULT_CONFIG } from "../extensions/open-tui/config.ts";
 import { readContextBlocks } from "../extensions/open-tui/context-blocks.ts";
 import { ContextBlocksOverlay } from "../extensions/open-tui/context-blocks-overlay.ts";
@@ -313,4 +313,28 @@ test("session shutdown unwatches the sidecar", async (t) => {
 	await host.shutdown();
 	assert.ok(calls.includes(`unwatch ${sidecar}`), "session_shutdown must fs.unwatchFile the sidecar");
 	assert.equal(statWatchers(), baseline, "no StatWatcher may outlive its session");
+});
+
+test("the blocks overlay keeps each divider on one row and inside the terminal", (t) => {
+	const dir = temporaryDirectory(t, "pi-open-tui-blocks-");
+	const sessionFile = join(dir, "session.jsonl");
+	writeSidecar(sessionFile);
+	const dump = (lines: readonly string[]): string => lines.map(stripAnsi).join("\n");
+	for (const width of [20, 40, 80, 120]) {
+		for (const rows of [12, 24, 40]) {
+			const overlay = new ContextBlocksOverlay(fakeTui(width, rows), theme, () => readContextBlocks(sessionFile), () => {});
+			const lines = overlay.render(width);
+			// A divider that overflows the child width wraps, leaving a stray "──" row.
+			const dashes = lines
+				.map((line) => stripAnsi(line).trim())
+				.filter((line) => line.length > 0 && /^─+$/.test(line))
+				.map((line) => line.length);
+			assert.deepEqual(dashes, [width - 4, width - 4], `width ${width}: each divider must be one row of ${width - 4}\n${dump(lines)}`);
+			for (const line of lines) assert.ok(visibleWidth(line) <= width, `width ${width}: a line exceeds the terminal\n${dump(lines)}`);
+			assert.ok(lines.length <= rows, `width ${width} × ${rows}: ${lines.length} rows overflow the terminal\n${dump(lines)}`);
+		}
+	}
+	// The empty state is chrome-only and must fit the shortest terminal too.
+	const empty = new ContextBlocksOverlay(fakeTui(80, 12), theme, () => undefined, () => {});
+	assert.ok(empty.render(80).length <= 12, dump(empty.render(80)));
 });

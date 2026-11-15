@@ -16,8 +16,16 @@ import { fmtTokens } from "./utils.ts";
 const TITLE = "Context Compression";
 const EMPTY = "No compression blocks yet.";
 const HINT = "ctrl+d expand · enter expand · r reload · esc close";
-/** Rows the chrome (title, header, dividers, hint, box padding) takes from the terminal. */
-const CHROME_ROWS = 7;
+/** The Box pads one blank row above and below its children and one column left and right. */
+const BOX_PAD_X = 1;
+const BOX_PAD_Y = 1;
+/** Every child is a `Text` with its own left and right padding inside the content box. */
+const CHILD_PAD_X = 1;
+/**
+ * Rows the chrome takes from the terminal: the Box's top and bottom padding, the
+ * title, the header line, the two dividers, and the hint.
+ */
+const CHROME_ROWS = 2 * BOX_PAD_Y + 5;
 const INDENT = "      ";
 
 export function formatBlocksHeader(snapshot: ContextBlocksSnapshot): string {
@@ -60,6 +68,8 @@ export class ContextBlocksOverlay implements ContextBlocksOverlayHandle {
 	private layoutWidth: number | undefined;
 	private layoutRows: number | undefined;
 	private cachedLines: string[] | undefined;
+	/** Columns a child's text may occupy: the Box content box minus the child's own padding. */
+	private innerWidth = 0;
 	/** Rendered row offset → block index, for click selection. */
 	private readonly rowBlocks: number[] = [];
 
@@ -74,12 +84,17 @@ export class ContextBlocksOverlay implements ContextBlocksOverlayHandle {
 		this.reload = reload;
 		this.onClose = onClose;
 		this.snapshot = reload();
-		this.container = new Box(1, 1, (text: string) => theme.bg("customMessageBg", text));
+		this.container = new Box(BOX_PAD_X, BOX_PAD_Y, (text: string) => theme.bg("customMessageBg", text));
 		this.rebuild();
 	}
 
 	private blocks(): readonly BcpBlockLike[] {
 		return this.snapshot?.blocks ?? [];
+	}
+
+	/** A child renders exactly one row because its text is truncated to `innerWidth` here. */
+	private addChild(text: string): void {
+		this.container.addChild(new Text(truncateToWidth(text, this.innerWidth, "…"), CHILD_PAD_X, 0));
 	}
 
 	private blockLines(block: BcpBlockLike, index: number, width: number): string[] {
@@ -102,23 +117,25 @@ export class ContextBlocksOverlay implements ContextBlocksOverlayHandle {
 		this.layoutRows = this.tui.terminal.rows;
 		this.container.clear();
 		this.rowBlocks.length = 0;
-		this.container.addChild(new Text(this.theme.bold(this.theme.fg("accent", TITLE)), 1, 0));
+		// The Box reserves `2 * BOX_PAD_X` columns and every child reserves `2 * CHILD_PAD_X`
+		// of its own, so a line wider than this wraps inside the box.
+		this.innerWidth = Math.max(8, width - 2 * BOX_PAD_X - 2 * CHILD_PAD_X);
+		this.addChild(this.theme.bold(this.theme.fg("accent", TITLE)));
 
 		const blocks = this.blocks();
-		const innerWidth = Math.max(20, width - 2);
 		if (!this.snapshot || blocks.length === 0) {
-			this.container.addChild(new Text(this.theme.fg("dim", EMPTY), 1, 0));
-			this.container.addChild(new Text(this.theme.fg("dim", "esc close"), 1, 0));
+			this.addChild(this.theme.fg("dim", EMPTY));
+			this.addChild(this.theme.fg("dim", "esc close"));
 			this.cachedLines = undefined;
 			return;
 		}
 
 		this.selected = Math.min(Math.max(0, this.selected), blocks.length - 1);
-		this.container.addChild(new Text(this.theme.fg("dim", formatBlocksHeader(this.snapshot)), 1, 0));
-		this.container.addChild(new Text(this.theme.fg("dim", "─".repeat(innerWidth)), 1, 0));
+		this.addChild(this.theme.fg("dim", formatBlocksHeader(this.snapshot)));
+		this.addChild(this.theme.fg("dim", "─".repeat(this.innerWidth)));
 
 		const budget = Math.max(4, (this.layoutRows ?? 24) - CHROME_ROWS);
-		const groups = blocks.map((block, index) => this.blockLines(block, index, innerWidth));
+		const groups = blocks.map((block, index) => this.blockLines(block, index, this.innerWidth));
 		// Keep the selected block inside the window, dropping whole blocks from the top.
 		let start = Math.min(Math.max(0, this.scroll), this.selected);
 		const groupHeight = (from: number, to: number): number => {
@@ -134,14 +151,14 @@ export class ContextBlocksOverlay implements ContextBlocksOverlayHandle {
 		for (let index = start; index < groups.length && used < budget; index++) {
 			for (const line of groups[index]!) {
 				if (used >= budget) break;
-				this.container.addChild(new Text(line, 1, 0));
+				this.addChild(line);
 				this.rowBlocks.push(index);
 				used += 1;
 			}
 		}
 
-		this.container.addChild(new Text(this.theme.fg("dim", "─".repeat(innerWidth)), 1, 0));
-		this.container.addChild(new Text(this.theme.fg("dim", HINT), 1, 0));
+		this.addChild(this.theme.fg("dim", "─".repeat(this.innerWidth)));
+		this.addChild(this.theme.fg("dim", HINT));
 		this.cachedLines = undefined;
 	}
 
