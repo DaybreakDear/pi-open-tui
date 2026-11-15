@@ -677,3 +677,97 @@ if (known === undefined || Object.hasOwn(known, value))
 
 - `expandHint` 目前只能在配置文件里改，没有设置行；`README` 文档归 T5
 - `skinEpoch` 的深/浅比较已核实不会每次都自增（不要再动）
+
+---
+
+## T3 修复轮（复审行动项）
+
+复审范围 = `5f58e8f` / `9831a54` / `6b39464`（T3 三个提交）。**注意：T3 worker 在汇报里给出的
+`49c4521` / `949914e` / `0a97cb3` 三个 SHA 在仓库中不存在**（`git cat-file -t` 报
+`fatal: Not a valid object name`），实际提交以上面三个为准。同时核实：**所谓"`markdown-skin.ts`
+四处 add/add 冲突"从未发生**——`git log --all --merges -- extensions/open-tui/markdown-skin.ts`
+为空，该文件全长只有 `1cc9534`（创建）与 `5f58e8f`（加竖条）两个提交。
+
+结论 **CHANGES REQUIRED**。以下五项进入修复轮。
+
+### G3（应当修）两行模式下耗时/token 重复两次 —— `peek.ts:181` `:189` `:197`
+
+`statsSuffix` 被 `lineWithMarker()` 追加到第 1 行（`:181`），又被 `:189` 和 `:197` 追加到第 2 行。
+实测：
+
+```
+buildPeekLabel({phase:"thinking", tail:"prev\nlatest"}, 0, glyphs, 80, 2, counts)
+"~ think ⠋ prev 12.3s · 1.2k tok\n          latest 12.3s · 1.2k tok"
+```
+
+27/30/40/60 各宽度均复现。即开启 `thinkingPeek.lines: 2` 的用户会看到同一组数字两遍——
+正是本功能要消除的"信息墙"。
+**做法**：只在 marker 行追加 `statsSuffix`，第 2..n 行保持 `${thoughtIndent}${tail}`；
+`:173` 的宽度预留可顺带放宽。
+
+### G4（应当修）token 段是全会话累计，计时器却是单条消息 —— `index.ts:99`
+
+`elapsedMs` 每条 assistant 消息重置（`resetPeek()` 于 `message_start`，`index.ts:315-319` 清
+`thinkingStartedAt`），但 `tokens: getUsageTotals(target).output` 是**整个会话**的 output 累计
+（`state.ts:30-60`）。于是第二轮开头是 `0.4s · 4.2k tok`，两侧自相矛盾。
+**做法**：在 `index.ts:332` 记录 `thinkingTokensBase`，传
+`tokens: getUsageTotals(target).output - thinkingTokensBase`。
+
+### G5（应当修）窄宽度降级会先杀掉 spinner，且被测试钉死 —— `peek.ts:170-172`
+
+降级触发条件是 `markerWidth + statsWidth > w`，即 `w < ~26`。此时头部退化为
+`fit("✻ 12s")`：spinner 没了、"think" 没了、两行思考正文也没了。实测 `w=25` → `"~ 12s"`，
+`w=26` → `"~ think ⠋ 12.3s · 1.2k tok"` 但 `contentWidth = max(0, -1)`，思考列数为 0。
+26 列下头部停止动画，比 T3 之前的版本更差（旧版至少保留 spinner 列）。
+**做法**：两阶段降级 ——（a）先丢 token 段，保留 `✻ think ⠋ 12.3s`；（b）仍放不下才丢 ` think`
+字面量至 `✻ ⠋ 12s`。**永远不要先丢 spinner 再丢文字**。
+
+### G6（应当修）竖条宽度是魔法数 2 —— `markdown-skin.ts:19`
+
+`USER_BAR_COLUMNS = 2` 硬编码 `visibleWidth("▌ ")`。`U+258C` 是东亚**Ambiguous**宽度字符：
+`pi-tui` 的 `visibleWidth("▌") === 1`，但配置为 ambiguous-wide 的 CJK 终端会画成 2 格，
+于是每条用户消息超出右边 1 列。
+**做法**：`const USER_BAR_COLUMNS = visibleWidth("▌ ");`
+
+### G7（应当修）`theme.userBar` 没有设置行 —— `config.ts:138`
+
+T3.11 新增了这个用户可见配置键，而同一阶段 T3.13 的宗旨恰恰是"主题控制项能在设置窗口里改"。
+现在 `userBar` 只能手改 `open-tui.json`；`settings-command.ts:329-332` 列了
+preset/dividers/gutter/banding 就停了。
+**做法**：仿 `themeGutter` 加 `{ id: "themeUserBar", ... }` 与 `!config.theme.userBar` 分支。
+
+### G8（NIT，顺手）
+
+| 位置 | 问题 | 处理 |
+|---|---|---|
+| `peek.ts:173` | `contentWidth` 可为 0 但统计仍显示，静默抹掉全部思考正文 | 用 `MIN_THOUGHT_COLS` 门槛走降级 |
+| `index.ts:95-101` | `counts.elapsedMs` 是装 closure 时的快照，重绘/缩放复用冻结值 | 在 closure 内算 `Date.now() - thinkingStartedAt` |
+| `markdown-skin.ts:114` | 注释声称竖条"在 OSC-133 zone marker 之外"，Pi 当前输出无法验证该断言 | 删注释或按 `\x1b]133;…` 前缀插入 |
+| `markdown-skin.ts:73` | 竖条安装被 `Markdown.prototype.renderToken` 存在性把守，该 hook 缺失时竖条一起静默不装 | 接受（符合该文件的降级哲学），但需解耦 |
+| `config.ts:293-300` | `showCounts` / `userBar` 的非布尔回退无测试 | 补两条 |
+| `peek.ts:35-38` `:41-43` | 负值/NaN 钳制正确（实测 `-5000/-3` → `"0.0s · 0 tok"`）但无测试 | 补 |
+
+### G9（测试补强：以下三条不是真门）
+
+- `tests/peek.test.ts`「两行模式第二行保留计数」：**在重复 bug 存在时仍然通过**。它只断言
+  `rows[1]?.endsWith("…tok")` 与 `rows[0]?.includes("previous thought")`，从不检查第 0 行**不含**计数。
+  改成 `assert.equal((label.match(/tok/g) ?? []).length, 1)`。
+- `tests/peek.test.ts`「窄终端降级」：`assert.equal(label, "~ 12s")` **把 spinner 丢失固化成了预期**，
+  会阻止 G5 修复，必须随 G5 一起改字面量。
+- `tests/peek.test.ts`「各宽度不超预算」：只验 `visibleWidth(row) <= width`，画一个 `…` 也能过。宽度安全但内容盲目。
+
+真门（已核实会在功能损坏时变红）：`userBar: false` 逐字节测试、竖条占用宽度测试
+（`assert.equal(visibleWidth(line), 40)` 及 21/12/5 宽度下的 `<= width`）、copy payload 测试、
+`showCounts: false` 字面量测试、以及三个设置项改配置的测试。
+
+### 已核实为真 / 无需改动
+
+- `thinkingPeek` 在 `51a9d45` **本来就是对象**（`{ lines: ThinkingPeekLines }`，默认 `{ lines: 1 }`），
+  worker 说的"无需迁移"属实；`showCounts` 有默认值与回退。
+- 四个 T3.13 设置行都真的改配置（`themePreset:329/:456`、`dividers:330/:457`、
+  `themeGutter:331/:458`、`themeBanding:332/:459`），且 `gutter`/`banding` 切的是布尔而非字符串，
+  测试断言的是返回的配置值，是真门。
+- 回归门干净：`git diff 51a9d45..HEAD -- tests/footer.test.ts tests/tool-view.test.ts` 为空。
+- 竖条不会超预算也不会错算 CJK：预算在内部渲染**之前**就减掉（`markdown-skin.ts:106`），
+  内部行再校验（`:111`），44 列预算 + 2 列竖条 = 40/40；宽度用 `visibleWidth` 而非 `.length`。
+  唯一残留风险即 G6。
