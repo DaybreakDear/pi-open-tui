@@ -410,6 +410,7 @@ export default function (pi: ExtensionAPI) {
 		},
 		() => resolveGlyphs(config.icons.mode),
 		skin,
+		() => config.theme,
 	);
 
 	pi.registerMarkdownTransformer(markSkinScope);

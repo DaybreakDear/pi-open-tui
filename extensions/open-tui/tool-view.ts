@@ -4,7 +4,7 @@ import type { ExtensionAPI, SourceInfo, Theme, ThemeColor, ToolRenderers } from 
 import { Box, type Component, getCapabilities, getImageDimensions, imageFallback, Spacer, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { ToolViewConfig } from "./config.ts";
 import type { IconGlyphs } from "./icons.ts";
-import { createPainter, type Painter, type SkinProvider } from "./theme.ts";
+import { createPainter, type Painter, type SkinProvider, type ThemeConfig } from "./theme.ts";
 import { codeLines, prepareToolPreview } from "./tool-preview.ts";
 import { sanitizeStatus, stripAnsi } from "./utils.ts";
 
@@ -460,6 +460,8 @@ function formatElapsed(ms: number): string {
 /** Stable rows reuse their final lines until width, theme, skin epoch, icons, or invalidation changes them. */
 /** No skin configured: Pi's own tokens, epoch 0, which is exactly the v0.4.6 behaviour. */
 const piSkin: SkinProvider = (theme: Theme) => ({ painter: createPainter(theme), epoch: 0 });
+/** No theme config supplied: no gutter, no banding, no dividers — the v0.4.6 rows. */
+const plainThemeConfig: ThemeConfig = { preset: "pi", slots: {}, dividers: "none", gutter: false, banding: false };
 
 function lines(
 	build: (width: number, icons: IconGlyphs, painter: Painter) => string[],
@@ -500,6 +502,11 @@ function statusBg(theme: Theme, context: RenderContext): (text: string) => strin
 	return (text) => theme.bg(bg, text);
 }
 
+/** Odd rows take the result background when banding is on; even rows stay untouched. */
+function banded(lines: string[], theme: Theme, cfg: ThemeConfig): string[] {
+	return cfg.banding ? lines.map((line, index) => (index % 2 === 1 ? theme.bg("toolSuccessBg", line) : line)) : lines;
+}
+
 function stopPulse(row: RowState): void {
 	if (row.pulse) clearInterval(row.pulse);
 	row.pulse = undefined;
@@ -537,7 +544,9 @@ export function createCompactRenderers(
 	generic = false,
 	summarizeExtension = summarizeGeneric,
 	skin?: SkinProvider,
+	getThemeConfig?: () => ThemeConfig,
 ): ToolRenderers {
+	const themeConfig = () => getThemeConfig?.() ?? plainThemeConfig;
 	const skinFor = (theme: Theme) => (skin ?? piSkin)(theme);
 	const label = Object.hasOwn(TOOL_LABELS, toolName) ? TOOL_LABELS[toolName]! : sanitizeStatus(toolName);
 	const isShell = !generic && (toolName === "bash" || toolName === "powershell");
@@ -651,39 +660,42 @@ export function createCompactRenderers(
 					: summarizeResult(toolName, result, args) + duration;
 			const tail = partial && isShell ? tailLines(textOutput(result), LIVE_TAIL_LINES) : [];
 			const calls = isCodemode ? codemodeCalls(result) : [];
-			const body = isCodemode && !partial ? context.isError
+			const bodyLines = isCodemode && !partial ? context.isError
 				? codemodeError(result) : codemodeBody(result)[0] : undefined;
 			const loaded = isToolSearch && !partial && !context.isError ? loadedTools(result) : undefined;
 			return lines((width, icons, painter) => {
 				const { toolResult } = icons;
 				const gutter = `${pad}  ${painter.paint("gutter", toolResult)}  `;
 				const indent = `${pad}  ${" ".repeat(visibleWidth(toolResult))}  `;
+				const cfg = themeConfig();
+				// The bar replaces the indent, so both prefixes occupy the same visible width.
+				const bar = cfg.gutter ? `${pad}  ${painter.paint("gutter", "│")}  ` : indent;
 				if (isCodemode) {
 					const counts = codemodeCounts(calls);
 					const elapsed = row.startedAt === undefined ? "" : ` ${formatElapsed(Date.now() - row.startedAt)}`;
 					const status = partial ? `Running…${elapsed}${counts ? ` · ${counts}` : ""}`
 						: context.isError ? summarizeCodemode(result, duration, "Failed") : summary;
 					const color = context.isError ? "error" : partial || calls.some((call) => call.status === "error" || call.status === "cancelled") ? "warning" : "dim";
-					return [
+					return banded([
 						...nestedCallRows(calls, theme, context.cwd, icons).map((line) => `${pad}  ${line}`),
 						gutter + theme.fg(color, status),
-						...(body ? [indent + (context.isError
-							? painter.paint("error", sanitizeStatus(body))
-							: painter.paint("toolOutput", sanitizeStatus(body)))] : []),
-					];
+						...(bodyLines ? [bar + (context.isError
+							? painter.paint("error", sanitizeStatus(bodyLines))
+							: painter.paint("toolOutput", sanitizeStatus(bodyLines)))] : []),
+					], theme, cfg);
 				}
 				if (partial) {
 					if (!timed) return [gutter + painter.paint("warning", "Running…")];
 					const elapsed = row.startedAt === undefined ? "" : ` ${formatElapsed(Date.now() - row.startedAt)}`;
-					return [...tail.map((line) => painter.paint("toolOutput", line)), painter.paint("warning", `Running…${elapsed}`)]
-						.map((line, index) => (index === 0 ? gutter : indent) + line);
+					return banded([...tail.map((line) => painter.paint("toolOutput", line)), painter.paint("warning", `Running…${elapsed}`)]
+						.map((line, index) => (index === 0 ? gutter : bar) + line), theme, cfg);
 				}
 				if (context.isError) return [gutter + painter.paint("error", summary)];
 				const names = loaded?.slice(0, 3).map(sanitizeStatus).join(" · ");
 				const remaining = loaded ? Math.max(0, loaded.length - 3) : 0;
-				return [gutter + theme.fg("dim", summary),
-					...(names ? [indent + painter.paint("toolOutput", names + (remaining ? ` · +${remaining} more (ctrl+o to expand)` : ""))] : []),
-					...(row.preview?.render(width, indent) ?? [])];
+				return banded([gutter + theme.fg("dim", summary),
+					...(names ? [bar + painter.paint("toolOutput", names + (remaining ? ` · +${remaining} more (ctrl+o to expand)` : ""))] : []),
+					...(row.preview?.render(width, bar) ?? [])], theme, cfg);
 			}, theme, glyphs, !partial, skin);
 		},
 	};
@@ -700,6 +712,7 @@ export function registerToolView(
 	getView: () => ToolViewConfig,
 	glyphs: () => IconGlyphs,
 	skin?: SkinProvider,
+	getThemeConfig?: () => ThemeConfig,
 ): void {
 	const running = new Map<string, RowState | undefined>();
 	pi.on("tool_execution_start", (event) => { running.set(event.toolCallId, undefined); });
@@ -719,10 +732,10 @@ export function registerToolView(
 		const sourceInfo = OWNED_TOOLS.has(toolName) || view.extensionTools && FFF_TOOLS.has(toolName)
 			? pi.getAllTools().find((tool) => tool.name === toolName)?.sourceInfo : undefined;
 		const builtin = OWNED_TOOLS.has(toolName) && sourceInfo?.source === "builtin";
-		if (builtin) return native || toolName === "tool_search" ? createCompactRenderers(toolName, native, glyphs, running, false, undefined, skin) : native;
+		if (builtin) return native || toolName === "tool_search" ? createCompactRenderers(toolName, native, glyphs, running, false, undefined, skin, getThemeConfig) : native;
 		if (!view.extensionTools) return native;
 		const fff = fffKind(toolName, sourceInfo);
 		return createCompactRenderers(toolName, native, glyphs, running, true,
-			fff ? (result, duration) => summarizeFff(fff, result, duration) : summarizeGeneric, skin);
+			fff ? (result, duration) => summarizeFff(fff, result, duration) : summarizeGeneric, skin, getThemeConfig);
 	});
 }
