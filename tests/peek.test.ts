@@ -223,10 +223,15 @@ test("buildPeekLabel keeps the v0.4.6 label when counts are off", () => {
 	);
 });
 
-test("buildPeekLabel degrades to the elapsed-only header on narrow terminals", () => {
-	const label = buildPeekLabel({ phase: "thinking", tail: "x" }, 0, glyphs, 20, 1, counts);
-	assert.equal(label, "~ 12s");
-	assert.ok(!label.includes("tok"));
+test("buildPeekLabel degrades spinner-last on narrow terminals", () => {
+	// Width 30 drops only the token segment; width 20 also drops the `think` literal.
+	const kept = buildPeekLabel({ phase: "thinking", tail: "x" }, 0, glyphs, 30, 1, counts);
+	assert.equal(kept, "~ think ⠋ x 12.3s");
+	assert.ok(!kept.includes("tok"), kept);
+	const compact = buildPeekLabel({ phase: "thinking", tail: "x" }, 0, glyphs, 20, 1, counts);
+	assert.equal(compact, "~ ⠋ x 12s");
+	// The spinner must survive every degradation step: it is the only moving glyph.
+	assert.ok(compact.includes("⠋"), compact);
 });
 
 test("buildPeekLabel keeps the spinner and the counts while clipping the thought", () => {
@@ -245,7 +250,7 @@ test("buildPeekLabel keeps count labels within the width budget at every width",
 	}
 });
 
-test("buildPeekLabel keeps counts on the second row of the two-line header", () => {
+test("buildPeekLabel keeps counts on the marker row of the two-line header", () => {
 	const label = buildPeekLabel(
 		{ phase: "thinking", tail: "previous thought\nlatest thought" },
 		0,
@@ -257,7 +262,11 @@ test("buildPeekLabel keeps counts on the second row of the two-line header", () 
 	const rows = label.split("\n");
 	assert.equal(rows.length, 2);
 	assert.ok(rows[0]?.includes("previous thought"), label);
-	assert.ok(rows[1]?.endsWith("12.3s · 1.2k tok"), label);
+	// The counts are spent once, on the marker row: printing them twice doubled the numbers.
+	assert.equal((label.match(/tok/g) ?? []).length, 1, label);
+	assert.ok(rows[0]?.endsWith("12.3s · 1.2k tok"), label);
+	assert.ok(!rows[1]?.includes("12.3s"), label);
+	assert.ok(rows[1]?.endsWith("latest thought"), label);
 	assert.ok(rows.every((row) => visibleWidth(row) <= 80));
 });
 
@@ -268,6 +277,20 @@ test("buildPeekLabel formats long durations and small token counts", () => {
 		showCounts: true,
 	});
 	assert.equal(label, "~ think ⠋ x 1m 5s · 900 tok");
+});
+
+test("buildPeekLabel clamps negative and non-finite counts", () => {
+	const clamp = (elapsedMs: number, tokens: number): string => buildPeekLabel(
+		{ phase: "thinking", tail: "x" },
+		0,
+		glyphs,
+		80,
+		1,
+		{ elapsedMs, tokens, showCounts: true },
+	);
+	assert.equal(clamp(-5_000, -3), "~ think ⠋ x 0.0s · 0 tok");
+	assert.equal(clamp(Number.NaN, Number.NaN), "~ think ⠋ x 0.0s · 0 tok");
+	assert.equal(clamp(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY), "~ think ⠋ x 0.0s · 0 tok");
 });
 
 test("buildPeekLabel ignores counts outside the thinking phase", () => {

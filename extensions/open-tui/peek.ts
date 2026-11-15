@@ -4,6 +4,11 @@ import { fmtTokens, formatDuration, sanitizeStatus } from "./utils.ts";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const MAX_PEEK_LINES = 2;
+/**
+ * Thought columns the header must leave before the counts keep their space: below this the
+ * header degrades instead of silently erasing the thinking text the peek exists to show.
+ */
+const MIN_THOUGHT_COLS = 8;
 const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 export type PeekPhase = "idle" | "thinking" | "done";
@@ -159,18 +164,28 @@ export function buildPeekLabel(
 			const spin = SPINNER_FRAMES[frame % SPINNER_FRAMES.length] ?? "";
 			// Thinking text is model output (untrusted): strip terminal control
 			// sequences before placing it in Pi's native label.
-			const marker = `${prefix} ${spin}`;
-			const markerWidth = visibleWidth(`${marker} `);
 			const stats = formatPeekCounts(counts);
-			const statsWidth = visibleWidth(stats);
-			const statsSuffix = stats ? ` ${stats}` : "";
-			// Counts must never be clipped, so their columns are reserved before the
-			// thought text is budgeted; if even the counts-only header does not fit,
-			// degrade to `✻ 12s` instead of dropping the elapsed time.
-			if (stats && markerWidth + statsWidth > w) {
-				return fit(`${glyphs.thinking} ${formatCompactElapsed(counts?.elapsedMs ?? 0)}`);
+			let marker = `${prefix} ${spin}`;
+			let statsSuffix = stats ? ` ${stats}` : "";
+			// Two-stage degradation with the spinner last: the token segment goes first, then the
+			// `think` literal, so a narrow terminal never drops the only moving glyph before the text.
+			if (stats) {
+				const thoughtCols = state.tail ? MIN_THOUGHT_COLS : 0;
+				const fitsHeader = (candidate: string, suffix: string): boolean =>
+					visibleWidth(`${candidate} `) + visibleWidth(suffix) + thoughtCols <= w;
+				if (!fitsHeader(marker, statsSuffix)) {
+					statsSuffix = ` ${formatPeekElapsed(counts?.elapsedMs ?? 0)}`;
+					if (!fitsHeader(marker, statsSuffix)) {
+						marker = `${glyphs.thinking} ${spin}`;
+						statsSuffix = ` ${formatCompactElapsed(counts?.elapsedMs ?? 0)}`;
+					}
+				}
 			}
-			const contentWidth = Math.max(0, w - markerWidth - (stats ? statsWidth + 1 : 0));
+			const markerWidth = visibleWidth(`${marker} `);
+			const suffixWidth = visibleWidth(statsSuffix);
+			// The marker row shares its columns with the counts; continuation rows carry no suffix.
+			const contentWidth = Math.max(1, w - markerWidth - suffixWidth);
+			const thoughtWidth = Math.max(1, w - markerWidth);
 			const thoughtIndent = " ".repeat(markerWidth);
 			const safeLines = state.tail
 				.split("\n")
@@ -184,17 +199,18 @@ export function buildPeekLabel(
 				const latestWrapped = wrapTextWithAnsi(window, Math.max(1, contentWidth));
 				if (latestWrapped.length > 1) {
 					// Word wrapping may add short rows; always retain the newest content.
+					// The counts stay on the marker row: repeating them doubled the numbers.
 					const first = latestWrapped.at(-2) ?? "";
 					const second = latestWrapped.at(-1) ?? "";
-					return `${lineWithMarker(first)}\n${fit(`${thoughtIndent}${second}${statsSuffix}`)}`;
+					return `${lineWithMarker(first)}\n${fit(`${thoughtIndent}${second}`)}`;
 				}
 			}
 			const firstTail = clipTail(count >= 2 ? safeLines[0] ?? "" : latest, contentWidth);
 			if (count < 2 || safeLines.length < 2) return lineWithMarker(firstTail);
-			// Align the latest line with the first line's thinking text, not with
-			// the status marker.
-			const secondTail = clipTail(latest, contentWidth);
-			return `${lineWithMarker(firstTail)}\n${fit(`${thoughtIndent}${secondTail}${statsSuffix}`)}`;
+			// Align the latest line with the first line's thinking text, not with the status
+			// marker; the continuation row has the counts' columns to itself.
+			const secondTail = clipTail(latest, thoughtWidth);
+			return `${lineWithMarker(firstTail)}\n${fit(`${thoughtIndent}${secondTail}`)}`;
 		}
 		case "done":
 			return fit(`${prefix} ${glyphs.done}`);

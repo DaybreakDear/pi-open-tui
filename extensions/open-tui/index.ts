@@ -82,6 +82,8 @@ export default function (pi: ExtensionAPI) {
 	let peekLabelActive = false;
 	// Set on the first thinking update of a task: the header's elapsed time starts there.
 	let thinkingStartedAt: number | undefined;
+	// Session-wide output total when this task started: the header shows the message, not the session.
+	let thinkingTokensBase: number | undefined;
 
 	const getThinkingLevel = () => (sessionLifecycle.isCurrent() ? pi.getThinkingLevel() : "off");
 
@@ -97,15 +99,19 @@ export default function (pi: ExtensionAPI) {
 		const frame = peekFrame;
 		const glyphs = resolveGlyphs(config.icons.mode);
 		const lines = config.thinkingPeek.lines;
-		// Reuse the session usage counter for the token segment; snapshotted with the frame.
-		const counts = thinkingStartedAt === undefined
-			? undefined
-			: {
-				elapsedMs: Date.now() - thinkingStartedAt,
-				tokens: getUsageTotals(target).output,
-				showCounts: config.thinkingPeek.showCounts,
-			};
-		editor.setLatestHiddenThinkingLabel((width) => buildPeekLabel(snapshot, frame, glyphs, width, lines, counts));
+		const tokensBase = thinkingTokensBase ?? 0;
+		// Both numbers are read per render: Pi re-invokes this on every frame, and a snapshot taken
+		// here would freeze the clock and the token segment for the rest of the task.
+		editor.setLatestHiddenThinkingLabel((width) => {
+			const counts = thinkingStartedAt === undefined
+				? undefined
+				: {
+					elapsedMs: Date.now() - thinkingStartedAt,
+					tokens: getUsageTotals(target).output - tokensBase,
+					showCounts: config.thinkingPeek.showCounts,
+				};
+			return buildPeekLabel(snapshot, frame, glyphs, width, lines, counts);
+		});
 		peekLabelActive = true;
 	};
 
@@ -123,6 +129,7 @@ export default function (pi: ExtensionAPI) {
 		peek.phase = "idle";
 		peek.tail = "";
 		thinkingStartedAt = undefined;
+		thinkingTokensBase = undefined;
 		editor?.resetHiddenThinkingLabelTarget();
 		if (peekSettleTimer) {
 			clearTimeout(peekSettleTimer);
@@ -398,7 +405,10 @@ export default function (pi: ExtensionAPI) {
 		if (peek.phase === "done") return;
 		const parts = collectPeekParts(message.content);
 		const next = reducePeek(peek, parts);
-		if (next.phase === "thinking" && thinkingStartedAt === undefined) thinkingStartedAt = Date.now();
+		if (next.phase === "thinking" && thinkingStartedAt === undefined) {
+			thinkingStartedAt = Date.now();
+			thinkingTokensBase = getUsageTotals(ctx).output;
+		}
 		const changed = next.phase !== peek.phase || next.tail !== peek.tail;
 		peek.phase = next.phase;
 		peek.tail = next.tail;
