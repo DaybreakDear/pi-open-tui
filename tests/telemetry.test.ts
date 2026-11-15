@@ -532,6 +532,8 @@ test("open-tui keeps a bounded peek scoped to the current assistant", async () =
 		mode: "tui",
 		isIdle: () => false,
 		cwd: process.cwd(),
+		// The thinking header reads the session usage counter for its token segment.
+		sessionManager: { getLeafId: () => null, getEntries: () => [] },
 		ui: {
 			theme,
 			notify() {},

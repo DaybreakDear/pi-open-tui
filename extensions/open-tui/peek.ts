@@ -1,6 +1,6 @@
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { IconGlyphs } from "./icons.ts";
-import { sanitizeStatus } from "./utils.ts";
+import { fmtTokens, formatDuration, sanitizeStatus } from "./utils.ts";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const MAX_PEEK_LINES = 2;
@@ -13,6 +13,13 @@ export interface PeekState {
 	tail: string;
 }
 
+/** Elapsed time and token count for the thinking header. */
+export interface PeekCounts {
+	elapsedMs: number;
+	tokens: number;
+	showCounts: boolean;
+}
+
 export interface PeekMessageParts {
 	thinking: string;
 	text: string;
@@ -23,6 +30,25 @@ function stringValue(value: unknown): string | undefined {
 }
 
 const normalizePeekLineCount = (lineCount: number): number => Math.max(1, Math.min(MAX_PEEK_LINES, Math.floor(lineCount)));
+
+/** One decimal below a minute so a thinking block visibly progresses; `1m 5s` after that. */
+function formatPeekElapsed(elapsedMs: number): string {
+	const ms = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0;
+	return ms < 60_000 ? `${(ms / 1000).toFixed(1)}s` : formatDuration(ms);
+}
+
+/** The degraded narrow header keeps whole seconds only, e.g. `12s`. */
+function formatCompactElapsed(elapsedMs: number): string {
+	const ms = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0;
+	return `${Math.floor(ms / 1000)}s`;
+}
+
+/** `12.3s · 1.2k tok`, or "" when counts are off (the v0.4.6 label). */
+function formatPeekCounts(counts: PeekCounts | undefined): string {
+	if (!counts?.showCounts) return "";
+	const tokens = Number.isFinite(counts.tokens) ? Math.max(0, Math.round(counts.tokens)) : 0;
+	return `${formatPeekElapsed(counts.elapsedMs)} · ${fmtTokens(tokens)} tok`;
+}
 
 /**
  * Pure phase machine for one assistant-message update.
@@ -122,6 +148,7 @@ export function buildPeekLabel(
 	glyphs: IconGlyphs,
 	width: number,
 	lineCount = 1,
+	counts?: PeekCounts,
 ): string {
 	const w = Math.max(1, Math.floor(width));
 	const prefix = `${glyphs.thinking} think`;
@@ -134,7 +161,16 @@ export function buildPeekLabel(
 			// sequences before placing it in Pi's native label.
 			const marker = `${prefix} ${spin}`;
 			const markerWidth = visibleWidth(`${marker} `);
-			const contentWidth = Math.max(0, w - markerWidth);
+			const stats = formatPeekCounts(counts);
+			const statsWidth = visibleWidth(stats);
+			const statsSuffix = stats ? ` ${stats}` : "";
+			// Counts must never be clipped, so their columns are reserved before the
+			// thought text is budgeted; if even the counts-only header does not fit,
+			// degrade to `✻ 12s` instead of dropping the elapsed time.
+			if (stats && markerWidth + statsWidth > w) {
+				return fit(`${glyphs.thinking} ${formatCompactElapsed(counts?.elapsedMs ?? 0)}`);
+			}
+			const contentWidth = Math.max(0, w - markerWidth - (stats ? statsWidth + 1 : 0));
 			const thoughtIndent = " ".repeat(markerWidth);
 			const safeLines = state.tail
 				.split("\n")
@@ -142,7 +178,7 @@ export function buildPeekLabel(
 				.filter(Boolean)
 				.slice(-count);
 			const latest = safeLines.at(-1) ?? "";
-			const lineWithMarker = (tail: string): string => fit(tail ? `${marker} ${tail}` : marker);
+			const lineWithMarker = (tail: string): string => fit(tail ? `${marker} ${tail}${statsSuffix}` : `${marker}${statsSuffix}`);
 			if (count >= 2) {
 				const window = clipTail(latest, contentWidth * count);
 				const latestWrapped = wrapTextWithAnsi(window, Math.max(1, contentWidth));
@@ -150,7 +186,7 @@ export function buildPeekLabel(
 					// Word wrapping may add short rows; always retain the newest content.
 					const first = latestWrapped.at(-2) ?? "";
 					const second = latestWrapped.at(-1) ?? "";
-					return `${lineWithMarker(first)}\n${fit(`${thoughtIndent}${second}`)}`;
+					return `${lineWithMarker(first)}\n${fit(`${thoughtIndent}${second}${statsSuffix}`)}`;
 				}
 			}
 			const firstTail = clipTail(count >= 2 ? safeLines[0] ?? "" : latest, contentWidth);
@@ -158,7 +194,7 @@ export function buildPeekLabel(
 			// Align the latest line with the first line's thinking text, not with
 			// the status marker.
 			const secondTail = clipTail(latest, contentWidth);
-			return `${lineWithMarker(firstTail)}\n${fit(secondTail ? `${thoughtIndent}${secondTail}` : thoughtIndent)}`;
+			return `${lineWithMarker(firstTail)}\n${fit(`${thoughtIndent}${secondTail}${statsSuffix}`)}`;
 		}
 		case "done":
 			return fit(`${prefix} ${glyphs.done}`);

@@ -17,6 +17,7 @@ import { registerToolView } from "./tool-view.ts";
 import {
 	createInitialState,
 	getModelMeta,
+	getUsageTotals,
 	invalidateUsageCache,
 	type FooterState,
 } from "./state.ts";
@@ -73,6 +74,8 @@ export default function (pi: ExtensionAPI) {
 	let peekSettleTimer: ReturnType<typeof setTimeout> | undefined;
 	let peekTaskEpoch = 0; // bumped at every agent task boundary
 	let peekLabelActive = false;
+	// Set on the first thinking update of a task: the header's elapsed time starts there.
+	let thinkingStartedAt: number | undefined;
 
 	const getThinkingLevel = () => (sessionLifecycle.isCurrent() ? pi.getThinkingLevel() : "off");
 
@@ -88,7 +91,15 @@ export default function (pi: ExtensionAPI) {
 		const frame = peekFrame;
 		const glyphs = resolveGlyphs(config.icons.mode);
 		const lines = config.thinkingPeek.lines;
-		editor.setLatestHiddenThinkingLabel((width) => buildPeekLabel(snapshot, frame, glyphs, width, lines));
+		// Reuse the session usage counter for the token segment; snapshotted with the frame.
+		const counts = thinkingStartedAt === undefined
+			? undefined
+			: {
+				elapsedMs: Date.now() - thinkingStartedAt,
+				tokens: getUsageTotals(target).output,
+				showCounts: config.thinkingPeek.showCounts,
+			};
+		editor.setLatestHiddenThinkingLabel((width) => buildPeekLabel(snapshot, frame, glyphs, width, lines, counts));
 		peekLabelActive = true;
 	};
 
@@ -105,6 +116,7 @@ export default function (pi: ExtensionAPI) {
 	const resetPeek = () => {
 		peek.phase = "idle";
 		peek.tail = "";
+		thinkingStartedAt = undefined;
 		editor?.resetHiddenThinkingLabelTarget();
 		if (peekSettleTimer) {
 			clearTimeout(peekSettleTimer);
@@ -317,6 +329,7 @@ export default function (pi: ExtensionAPI) {
 		if (peek.phase === "done") return;
 		const parts = collectPeekParts(message.content);
 		const next = reducePeek(peek, parts);
+		if (next.phase === "thinking" && thinkingStartedAt === undefined) thinkingStartedAt = Date.now();
 		const changed = next.phase !== peek.phase || next.tail !== peek.tail;
 		peek.phase = next.phase;
 		peek.tail = next.tail;

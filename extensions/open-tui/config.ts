@@ -45,6 +45,8 @@ export interface TelemetryConfig {
 
 export interface ThinkingPeekConfig {
 	lines: ThinkingPeekLines;
+	/** Append `12.3s · 1.2k tok` to the thinking header; false restores the v0.4.6 label. */
+	showCounts: boolean;
 }
 
 export interface ToolViewConfig {
@@ -119,6 +121,7 @@ export const DEFAULT_CONFIG: OpenTuiConfig = {
 	},
 	thinkingPeek: {
 		lines: 1,
+		showCounts: true,
 	},
 	toolView: {
 		mode: "native",
@@ -290,6 +293,9 @@ export function loadConfig(notify?: (msg: string, level: "warning" | "info") => 
 			config.thinkingPeek = structuredClone(DEFAULT_CONFIG.thinkingPeek);
 		} else {
 			config.thinkingPeek.lines = normalizeThinkingPeekLines(config.thinkingPeek.lines);
+			if (typeof config.thinkingPeek.showCounts !== "boolean") {
+				config.thinkingPeek.showCounts = DEFAULT_CONFIG.thinkingPeek.showCounts;
+			}
 		}
 		config.toolView = normalizeToolView(config.toolView);
 		config.cost = normalizeCost(config.cost);

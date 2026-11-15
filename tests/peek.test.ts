@@ -205,3 +205,72 @@ test("buildPeekLabel neutralizes terminal control sequences in thinking text", (
 test("sanitizeStatus preserves text around unsupported CSI sequences", () => {
 	assert.equal(sanitizeStatus("\x1b[?25lvisible\x1b[31m text"), "visible text");
 });
+
+// Elapsed time and token counts in the thinking header.
+const counts = { elapsedMs: 12_300, tokens: 1_240, showCounts: true };
+
+test("buildPeekLabel appends elapsed time and token counts to the thinking header", () => {
+	assert.equal(
+		buildPeekLabel({ phase: "thinking", tail: "x" }, 0, glyphs, 80, 1, counts),
+		"~ think ⠋ x 12.3s · 1.2k tok",
+	);
+});
+
+test("buildPeekLabel keeps the v0.4.6 label when counts are off", () => {
+	assert.equal(
+		buildPeekLabel({ phase: "thinking", tail: "x" }, 0, glyphs, 80, 1, { ...counts, showCounts: false }),
+		"~ think ⠋ x",
+	);
+});
+
+test("buildPeekLabel degrades to the elapsed-only header on narrow terminals", () => {
+	const label = buildPeekLabel({ phase: "thinking", tail: "x" }, 0, glyphs, 20, 1, counts);
+	assert.equal(label, "~ 12s");
+	assert.ok(!label.includes("tok"));
+});
+
+test("buildPeekLabel keeps the spinner and the counts while clipping the thought", () => {
+	const label = buildPeekLabel({ phase: "thinking", tail: "x".repeat(400) }, 0, glyphs, 60, 1, counts);
+	assert.ok(label.startsWith("~ think ⠋ "), label);
+	assert.ok(label.endsWith("12.3s · 1.2k tok"), label);
+	assert.ok(visibleWidth(label) <= 60, `${visibleWidth(label)} > 60`);
+});
+
+test("buildPeekLabel keeps count labels within the width budget at every width", () => {
+	const state = { phase: "thinking" as const, tail: "思".repeat(200) };
+	for (const width of [120, 80, 60, 40, 30, 26, 22, 20, 12, 8]) {
+		for (const row of buildPeekLabel(state, 0, glyphs, width, 1, counts).split("\n")) {
+			assert.ok(visibleWidth(row) <= width, `${width}: ${visibleWidth(row)} > ${width}: ${row}`);
+		}
+	}
+});
+
+test("buildPeekLabel keeps counts on the second row of the two-line header", () => {
+	const label = buildPeekLabel(
+		{ phase: "thinking", tail: "previous thought\nlatest thought" },
+		0,
+		glyphs,
+		80,
+		2,
+		counts,
+	);
+	const rows = label.split("\n");
+	assert.equal(rows.length, 2);
+	assert.ok(rows[0]?.includes("previous thought"), label);
+	assert.ok(rows[1]?.endsWith("12.3s · 1.2k tok"), label);
+	assert.ok(rows.every((row) => visibleWidth(row) <= 80));
+});
+
+test("buildPeekLabel formats long durations and small token counts", () => {
+	const label = buildPeekLabel({ phase: "thinking", tail: "x" }, 0, glyphs, 80, 1, {
+		elapsedMs: 65_000,
+		tokens: 900,
+		showCounts: true,
+	});
+	assert.equal(label, "~ think ⠋ x 1m 5s · 900 tok");
+});
+
+test("buildPeekLabel ignores counts outside the thinking phase", () => {
+	assert.equal(buildPeekLabel({ phase: "done", tail: "" }, 2, glyphs, 80, 1, counts), "~ think +");
+	assert.equal(buildPeekLabel(createPeekState(), 0, glyphs, 80, 1, counts), "~ think ·");
+});

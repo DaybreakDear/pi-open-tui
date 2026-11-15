@@ -285,8 +285,8 @@ test("supports localized settings and keyboard shortcuts", async () => {
 
 test("configures inline footer from General settings", async () => {
 	const settings = await openSettings();
-	// Headers are skipped: Enabled → Header → Language → Thinking peek → Copy buttons → Tool view → Footer in editor border.
-	settings.press("\x1b[B", 6);
+	// Headers are skipped: Enabled → Header → Language → Thinking peek → Peek counts → Copy buttons → Tool view → Footer in editor border.
+	settings.press("\x1b[B", 7);
 	assert.match(selectedLine(settings.component), /Footer in editor border/);
 	settings.component.handleInput(" ");
 	assert.equal(settings.getConfig().inlineFooter, true);
@@ -295,8 +295,8 @@ test("configures inline footer from General settings", async () => {
 test("toggles copy buttons from General settings", async () => {
 	const settings = await openSettings();
 	assert.equal(settings.getConfig().copyButtons, true);
-	// Enabled → Header → Language → Thinking peek → Copy buttons
-	settings.press("\x1b[B", 4);
+	// Enabled → Header → Language → Thinking peek → Peek counts → Copy buttons
+	settings.press("\x1b[B", 5);
 	assert.match(selectedLine(settings.component), /Copy buttons/);
 	settings.component.handleInput(" ");
 	assert.equal(settings.getConfig().copyButtons, false);
@@ -306,8 +306,8 @@ test("toggling tool view settings keeps the other tool view options", async () =
 	const config = structuredClone(DEFAULT_CONFIG);
 	config.toolView.exclude = ["subagent_wait"];
 	const settings = await openSettings(config);
-	// Enabled → Header → Language → Thinking peek → Copy buttons → Tool view
-	for (let i = 0; i < 5; i++) settings.component.handleInput("\x1b[B");
+	// Enabled → Header → Language → Thinking peek → Peek counts → Copy buttons → Tool view
+	for (let i = 0; i < 6; i++) settings.component.handleInput("\x1b[B");
 	assert.match(selectedLine(settings.component), /Tool view/);
 	settings.component.handleInput(" ");
 	settings.component.handleInput("\x1b[B");
@@ -512,6 +512,26 @@ test("cycles the thinking peek line count from General settings", async () => {
 	assert.equal(settings.getConfig().thinkingPeek.lines, 0);
 	settings.component.handleInput("\r");
 	assert.equal(settings.getConfig().thinkingPeek.lines, 1);
+	settings.component.handleInput("q");
+});
+
+test("toggles the thinking peek counts from General settings", async () => {
+	const settings = await openSettings();
+	// Enabled → Header → Language → Thinking peek → Thinking peek counts
+	settings.press("\x1b[B", 4);
+	assert.match(selectedLine(settings.component), /Thinking peek counts/);
+	assert.match(selectedLine(settings.component), /On/);
+
+	settings.component.handleInput("\r");
+	assert.equal(settings.getConfig().thinkingPeek.showCounts, false);
+	assert.match(selectedLine(settings.component), /Off/);
+
+	// Cycling the line count must keep the counts flag.
+	settings.component.handleInput("\x1b[A");
+	settings.component.handleInput("\r");
+	assert.equal(settings.getConfig().thinkingPeek.lines, 2);
+	assert.equal(settings.getConfig().thinkingPeek.showCounts, false);
+
 	settings.component.handleInput("q");
 });
 

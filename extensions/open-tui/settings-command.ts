@@ -61,6 +61,7 @@ const COPY = {
 			inlineFooter: "Footer in editor border",
 			copyButtons: "Copy buttons",
 			thinkingPeek: "Thinking peek",
+			thinkingPeekCounts: "Thinking peek counts",
 			toolView: "Tool view",
 			extensionTools: "Compact extension tools",
 			language: "Language",
@@ -129,6 +130,7 @@ const COPY = {
 			inlineFooter: "底栏嵌入输入框",
 			copyButtons: "复制按钮",
 			thinkingPeek: "思考预览",
+			thinkingPeekCounts: "思考预览耗时与用量",
 			toolView: "工具视图",
 			extensionTools: "紧凑显示扩展工具",
 			language: "语言",
@@ -229,7 +231,7 @@ function cycleThinkingPeek(config: OpenTuiConfig): OpenTuiConfig {
 	const next = ([1, 2, 0] as const)[config.thinkingPeek.lines] ?? 0;
 	return {
 		...config,
-		thinkingPeek: { lines: next },
+		thinkingPeek: { ...config.thinkingPeek, lines: next },
 	};
 }
 
@@ -251,6 +253,7 @@ function buildFeaturesItems(config: OpenTuiConfig, copy: SettingsCopy): SettingG
 			label: copy.sections.messages,
 			items: [
 				{ id: "thinkingPeek", label: copy.labels.thinkingPeek, currentValue: formatThinkingPeekLines(config.thinkingPeek.lines, copy) },
+				{ id: "thinkingPeekCounts", label: copy.labels.thinkingPeekCounts, currentValue: flag(config.thinkingPeek.showCounts) },
 				{ id: "copyButtons", label: copy.labels.copyButtons, currentValue: flag(config.copyButtons) },
 				{ id: "toolView", label: copy.labels.toolView, currentValue: copy.values.toolView[config.toolView.mode] },
 				...(config.toolView.mode === "compact" ? [
@@ -385,6 +388,9 @@ function handleSettingChange(
 		if (itemId === "copyButtons") return { ...config, copyButtons: !config.copyButtons };
 		if (itemId === "settingsLanguage") return toggleLanguage(config);
 		if (itemId === "thinkingPeek") return cycleThinkingPeek(config);
+		if (itemId === "thinkingPeekCounts") {
+			return { ...config, thinkingPeek: { ...config.thinkingPeek, showCounts: !config.thinkingPeek.showCounts } };
+		}
 		if (itemId === "toolView") {
 			return { ...config, toolView: { ...config.toolView, mode: config.toolView.mode === "native" ? "compact" : "native" } };
 		}
