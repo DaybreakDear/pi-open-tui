@@ -134,6 +134,14 @@ export function formatRate(usdPerMTokens: number | null, cfg: CostConfig): strin
 
 ## T2a — 主题 JSON 预设
 
+**已核实的事实（direct from repo）**
+
+- 骨架源：`node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/dark.json` — 完整 56 色 + `vars` + `export` 块，直接 `cp` 后改色值即可
+- Schema：`node_modules/@earendil-works/pi-coding-agent/schemas/theme.schema.json` — `required: ["name", "colors"]`；`colors.required` 只有 **51** 色（`scrollbarTrack`、`scrollbarThumb`、`searchMatchBg`、`searchMatchText`、`thinkingMax` 是可选的，但 dark.json 都给了，新主题一律补齐 56）
+- 颜色值允许形态（`$defs.ColorValue`）：`#RGB` / `#RRGGBB` / `oklch(...)` / `okhsl(...)` / 变量名（不加 `$` 前缀，如 `"muted"`）/ 空字符串（终端默认）/ 0–255 整数
+- `dark.json` 的写法惯例：先把基础色放进 `vars`（`text`/`muted`/`violet`/`blue`/`green`/`red`/`yellow`/`blueBg`），`colors` 里用变量名引用，可读性最好——新主题沿用这个结构，不要铺满扁平 hex
+- `export` 块（`pageBg` / `cardBg` / `infoBg`）供 HTML 导出用，也要一并给出
+
 ### T2.1 红：`tests/themes.test.ts`
 
 ```ts
@@ -152,9 +160,11 @@ test("vars are resolvable", ...);                     // 所有 "$var" 引用能
 
 提交（红测试单独提交）：`test(themes): add theme validation and contrast gates`
 
+测试实现要点：断言键集时以 `dark.json` 的 `Object.keys(colors)` 为基准（56 个），而不是手写列表。
+
 ### T2.2 绿：`themes/tokyo-night.json`
 
-以 `D:/env/npm-global/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-tui/dist/theme/dark.json`（若不存在则用 `themes/dark.json` 搜索定位）为骨架，复制 56 个键，按 Tokyo Night 调色板填充：
+以 `node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/dark.json` 为骨架（`cp` 后改 `vars` + `colors` + `export`），按 Tokyo Night 调色板填充：
 
 ```
 background #1a1b26  text #c0caf5  muted #565f89  dim #414868
