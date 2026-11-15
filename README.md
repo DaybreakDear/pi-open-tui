@@ -68,7 +68,7 @@ Set `PI_CODING_AGENT_DIR` to use a different agent directory. Every theme fills 
 
 ### open-tui colours
 
-A Pi theme restyles Pi. open-tui additionally paints its own surfaces through eight slots, so the thinking block, tool rows, command output, and the user-message rail stay distinguishable from each other:
+A Pi theme restyles Pi. open-tui additionally paints its own surfaces through thirteen slots, so tool rows, command output, dividers, the user-message rail, and footer accents stay distinguishable from each other:
 
 ```json
 {
@@ -87,14 +87,41 @@ A Pi theme restyles Pi. open-tui additionally paints its own surfaces through ei
 | Key | Default | Effect |
 | --- | --- | --- |
 | `preset` | `"tokyo-night"` | `tokyo-night`, `catppuccin-mocha`, `gruvbox-dark`, `rose-pine-moon`, or `pi` for Pi's own tokens |
-| `slots` | `{}` | Per-slot colour overrides, e.g. `{ "command": "oklch(0.7 0.12 210)" }` |
-| `dividers` | `"line"` | `line`, `dashed`, or `none` between turns and around tool output |
+| `slots` | `{}` | Per-slot colour overrides; see the slot table below |
+| `dividers` | `"line"` | `line`, `dashed`, or `none`. Draws a rule between turns and colours footer separators |
 | `gutter` | `true` | A vertical rail beside command output |
 | `banding` | `false` | Alternate tool rows get a faint background |
 | `userBar` | `true` | A coloured rail beside user messages |
 | `expandHint` | `"plain"` | `key` underlines the `ctrl+o` keycap in expand hints |
 
-> **Upgrading from 0.4.x changes the default look.** `preset` defaults to `tokyo-night`, so the footer, dividers, and tool titles are recoloured even if you never edit the config. Set `"preset": "pi"` to get the 0.4.x rendering back exactly. Every other new option defaults to the previous behaviour.
+Overridable slots — an unknown name is dropped silently, so copy these exactly:
+
+| Slot | Paints | Falls back to Pi token |
+| --- | --- | --- |
+| `thinking` | The footer's reasoning-effort badge | `thinkingText` |
+| `toolCall` | The tool-call icon | `toolTitle` |
+| `toolTitle` | A tool row's title | `toolTitle` |
+| `toolOutput` | A tool row's output preview | `toolOutput` |
+| `command` | A command title and its output | `toolTitle` |
+| `divider` | Turn rules and footer separators | `dim` |
+| `gutter` | The rail beside command output | `dim` |
+| `userBar` | The rail beside user messages | `accent` |
+| `cost` | The cost amount and its icon | `warning` |
+| `stats` | Generic footer statistics | `accent` |
+| `success` | Success status text | `success` |
+| `error` | Error status text, and a failed tool row's title | `error` |
+| `warning` | Warning status text | `warning` |
+
+> **Upgrading from 0.4.x changes the default look, and `preset` alone does not undo it.** Three structural options also ship on: turn rules, the command gutter, the user-message rail, and the thinking-peek counts. To reproduce 0.4.6 exactly, including its colours:
+>
+> ```json
+> {
+>   "theme": { "preset": "pi", "dividers": "none", "gutter": false, "userBar": false },
+>   "thinkingPeek": { "showCounts": false }
+> }
+> ```
+>
+> One difference has no switch: a **failed** tool row now paints its title with Pi's `error` token instead of `toolTitle`, so a red failed row is visible at a glance.
 
 ## Configuration
 
@@ -203,7 +230,7 @@ When `billion-context-pi` is installed, open-tui reads its sidecar and shows how
 ≡ 3 bl · 2.1×
 ```
 
-Press `ctrl+shift+c` (or run `open-tui:context`) for a detail overlay listing every block, and click a block to expand it. The linkage is strictly read-only: open-tui never writes the sidecar, never dispatches a Pi command from the overlay, and does not import `billion-context-pi`. Without the sidecar there is simply no segment.
+Press `ctrl+shift+c` (or run `open-tui:context`) for a detail overlay listing every block. Click a block or press `enter` to expand it, `j`/`k` to move, `r` to reload the sidecar, and `q` or `esc` to close. The linkage is strictly read-only: open-tui never writes the sidecar, never dispatches a Pi command from the overlay, and does not import `billion-context-pi`. Without the sidecar there is simply no segment.
 
 ```json
 { "contextBlocks": { "enabled": true, "footerSegment": true, "pollMs": 1500 } }

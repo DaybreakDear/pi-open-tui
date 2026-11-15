@@ -68,7 +68,7 @@ mkdir -p ~/.pi/agent/themes && cp themes/*.json ~/.pi/agent/themes/ && /theme to
 
 ### open-tui 自有配色
 
-Pi 主题只改造 Pi 本身。open-tui 另用八个槽位给自己的区域上色，让思考块、工具行、命令输出和用户消息竖条彼此可区分：
+Pi 主题只改造 Pi 本身。open-tui 另用十三个槽位给自己的区域上色，让工具行、命令输出、分隔线、用户消息竖条和底栏强调彼此可区分：
 
 ```json
 {
@@ -87,14 +87,41 @@ Pi 主题只改造 Pi 本身。open-tui 另用八个槽位给自己的区域上�
 | 键 | 默认值 | 作用 |
 | --- | --- | --- |
 | `preset` | `"tokyo-night"` | `tokyo-night`、`catppuccin-mocha`、`gruvbox-dark`、`rose-pine-moon`，或 `pi` 表示改用 Pi 自己的 token |
-| `slots` | `{}` | 按槽位覆盖颜色，例如 `{ "command": "oklch(0.7 0.12 210)" }` |
-| `dividers` | `"line"` | `line`、`dashed` 或 `none`，用于轮次之间和工具输出分隔 |
+| `slots` | `{}` | 按槽位覆盖颜色，槽位见下表 |
+| `dividers` | `"line"` | `line`、`dashed` 或 `none`。轮次之间画分隔线，也用于底栏分隔符 |
 | `gutter` | `true` | 命令输出左侧的竖线 |
 | `banding` | `false` | 交替的工具行使用淡背景 |
 | `userBar` | `true` | 用户消息左侧的彩色竖条 |
 | `expandHint` | `"plain"` | 设为 `key` 会给展开提示里的 `ctrl+o` 键幅加下划线 |
 
-> **从 0.4.x 升级会改变默认外观。** `preset` 默认是 `tokyo-night`，即使你从没改过配置，底栏、分隔线和工具标题的配色也会变。设 `"preset": "pi"` 可以完全回到 0.4.x 的渲染效果；其余新增选项的默认值都等同旧行为。
+可覆盖的槽位。未知槽位名会被**静默丢弃**，请照表抄：
+
+| 槽位 | 绘制对象 | 回退到 Pi token |
+| --- | --- | --- |
+| `thinking` | 底栏的推理强度徽标 | `thinkingText` |
+| `toolCall` | 工具调用图标 | `toolTitle` |
+| `toolTitle` | 工具行标题 | `toolTitle` |
+| `toolOutput` | 工具行输出预览 | `toolOutput` |
+| `command` | 命令标题及其输出 | `toolTitle` |
+| `divider` | 轮次分隔线与底栏分隔符 | `dim` |
+| `gutter` | 命令输出左侧的竖线 | `dim` |
+| `userBar` | 用户消息左侧的竖条 | `accent` |
+| `cost` | 费用金额及其图标 | `warning` |
+| `stats` | 底栏的通用统计 | `accent` |
+| `success` | 成功状态文字 | `success` |
+| `error` | 错误状态文字，以及失败工具行的标题 | `error` |
+| `warning` | 警告状态文字 | `warning` |
+
+> **从 0.4.x 升级会改变默认外观，而且单改 `preset` 也回不去。** 另有四个结构选项也默认开启：轮次分隔线、命令竖线、用户消息竖条，以及思考预览的耗时/token 计数。若要完全重现 0.4.6（包括颜色）：
+>
+> ```json
+> {
+>   "theme": { "preset": "pi", "dividers": "none", "gutter": false, "userBar": false },
+>   "thinkingPeek": { "showCounts": false }
+> }
+> ```
+>
+> 有一处差异没有开关：**失败**的工具行现在用 Pi 的 `error` token 画标题（而不是 `toolTitle`），让失败行一眼可见。
 
 ## 配置
 

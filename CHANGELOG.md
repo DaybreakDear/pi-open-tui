@@ -6,8 +6,8 @@
 
 ### Added
 
-- Add an open-tui theme system: eight colour slots (`thinking`, `thinkingBorder`, `toolCall`, `toolTitle`, `command`, `toolOutput`, `userBar`, `cost`) driven by four presets (`tokyo-night` (default), `catppuccin-mocha`, `gruvbox-dark`, `rose-pine-moon`), a `pi` passthrough that renders Pi's own tokens, and per-slot overrides through `theme.slots`.
-- Add `theme.dividers`, `theme.gutter`, and `theme.banding` for structural readability, and a markdown skin that recolours headings, code fences, and inline emphasis.
+- Add an open-tui theme system: thirteen colour slots (`thinking`, `toolCall`, `toolTitle`, `toolOutput`, `command`, `divider`, `gutter`, `userBar`, `cost`, `stats`, `success`, `error`, `warning`) driven by four presets (`tokyo-night` (default), `catppuccin-mocha`, `gruvbox-dark`, `rose-pine-moon`), a `pi` passthrough that renders Pi's own tokens, and per-slot overrides through `theme.slots`.
+- Add `theme.dividers` (rules between turns and footer separators, painted through the `divider` slot), `theme.gutter`, and `theme.banding` for structural readability.
 - Add `theme.userBar` for a coloured rail on user messages, and `theme.expandHint` to emphasise the `ctrl+o` keycap on expand hints.
 - Add `cost.currency`, `cost.usdToCny`, and `cost.switchable` with `ctrl+shift+m` and a settings row, so the footer and telemetry can show CNY with a manual fixed rate.
 - Show elapsed time and token count in the thinking peek header through `thinkingPeek.showCounts`.
@@ -16,7 +16,16 @@
 
 ### Changed
 
-- **The default appearance changes for existing users.** open-tui now paints its own colours, and `theme.preset` defaults to `tokyo-night` instead of Pi's tokens. Set `"theme": { "preset": "pi" }` to restore the pre-0.5.0 colours exactly; every other new option already defaults to the previous behaviour.
+- **The default appearance changes for existing users.** open-tui now paints its own colours, and `theme.preset` defaults to `tokyo-night` instead of Pi's tokens. Turn rules, the command gutter, the user-message rail, and the thinking-peek counts are also on by default. `preset: "pi"` alone does **not** restore the old look; use:
+
+  ```json
+  {
+    "theme": { "preset": "pi", "dividers": "none", "gutter": false, "userBar": false },
+    "thinkingPeek": { "showCounts": false }
+  }
+  ```
+
+- A failed tool row now paints its title with Pi's `error` token instead of `toolTitle`, so a failure is visible at a glance. This is the one 0.5.0 visual change with no configuration switch.
 
 ### Fixed
 

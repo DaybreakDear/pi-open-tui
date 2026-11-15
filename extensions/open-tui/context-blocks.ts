@@ -150,11 +150,6 @@ export function readContextBlocks(
 	return snapshot;
 }
 
-/**
- * Poll the sidecar and hand every change to `onChange`. Returns the teardown
- * that calls `fs.unwatchFile`; callers must invoke it on shutdown so no watcher
- * outlives its session.
- */
 /** `fs.watchFile` would otherwise poll at NaN or Infinity and never fire. */
 function pollInterval(pollMs: number): number {
 	return Number.isFinite(pollMs) && pollMs >= 1 ? Math.floor(pollMs) : DEFAULT_POLL_MS;
