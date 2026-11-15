@@ -423,8 +423,9 @@ export default function (pi: ExtensionAPI) {
 				? "open-tui 设置本次生效，但未保存到磁盘。请检查配置目录权限和可用空间。"
 				: "open-tui settings apply for this session but could not be saved. Check configuration directory permissions and free space.", "warning");
 		}
+		// The painter only reads the theme block: an icon or cost change must not bust the row cache.
+		if (nextConfig.theme !== config.theme) skinEpoch += 1;
 		config = nextConfig;
-		skinEpoch += 1;
 	};
 
 	registerSettingsCommand(pi, {

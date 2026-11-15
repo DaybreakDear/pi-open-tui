@@ -5,7 +5,7 @@ import type { OpenTuiConfig } from "./config.ts";
 import { formatCost, type CostConfig } from "./currency.ts";
 import type { FooterBuiltinSegment, FooterPosition, RegisteredFooterSegment } from "./footer-segments.ts";
 import type { IconGlyphs } from "./icons.ts";
-import { createPainter, type Painter, type SkinProvider } from "./theme.ts";
+import { createPainter, type Painter, type Skin, type SkinProvider } from "./theme.ts";
 import { resolveGlyphs, resolveIconMode, runtimeSymbol } from "./icons.ts";
 import type { GitStatus } from "./git.ts";
 import type { RuntimeInfo } from "./runtime.ts";
@@ -546,6 +546,22 @@ function renderFooterContent(
 	return { mainLines, inlineLines: { top: inlineTop, bottom: inlineBottom }, extensionLines };
 }
 
+/**
+ * The painter for a footer without a skin hook: a render calls this once per segment, so the painter
+ * is rebuilt only when the theme or its configuration changes. See `createSkinProvider` for the
+ * epoch-driven variant the extension itself wires up.
+ */
+function configSkinProvider(getConfig: () => OpenTuiConfig): SkinProvider {
+	let cached: { theme: Theme; config: OpenTuiConfig["theme"]; skin: Skin } | undefined;
+	return (theme) => {
+		const config = getConfig().theme;
+		if (!cached || cached.theme !== theme || cached.config !== config) {
+			cached = { theme, config, skin: { painter: createPainter(theme, config), epoch: 0 } };
+		}
+		return cached.skin;
+	};
+}
+
 export function installFooter(
 	ctx: ExtensionContext,
 	getState: () => FooterState,
@@ -555,6 +571,7 @@ export function installFooter(
 ): FooterHandle {
 	let renderInline: (width: number) => InlineFooterLines | undefined = () => undefined;
 	let mounted = false;
+	const defaultSkin = configSkinProvider(getConfig);
 
 	ctx.ui.setFooter((tui, theme, footerData) => {
 		mounted = true;
@@ -574,7 +591,7 @@ export function installFooter(
 			width,
 			hooks.getLiveTps ?? (() => null),
 			hooks.getExtensionSegments ?? (() => []),
-			hooks.getSkin ?? ((footerTheme) => ({ painter: createPainter(footerTheme, getConfig().theme), epoch: 0 })),
+			hooks.getSkin ?? defaultSkin,
 		);
 
 		renderInline = (width) => getContent(width).inlineLines;
