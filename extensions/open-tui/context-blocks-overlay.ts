@@ -27,6 +27,8 @@ const CHILD_PAD_X = 1;
  */
 const CHROME_ROWS = 2 * BOX_PAD_Y + 5;
 const INDENT = "      ";
+/** A tiny summary must not print an absurd ratio: 2 chars would read as 2500.0x. */
+const MAX_RATIO = 999;
 
 export function formatBlocksHeader(snapshot: ContextBlocksSnapshot): string {
 	const tiers = [1, 2, 3].map((tier) => `t${tier}×${snapshot.tiers[tier as 1 | 2 | 3]}`).join(" ");
@@ -41,7 +43,7 @@ export function formatBlocksHeader(snapshot: ContextBlocksSnapshot): string {
 function summaryRatio(block: BcpBlockLike): string {
 	if (block.summary.length === 0) return "—";
 	const survivedTokens = Math.max(1, Math.round(block.summary.length / 4));
-	return `${(block.compressedTokens / survivedTokens).toFixed(1)}x`;
+	return `${Math.min(MAX_RATIO, block.compressedTokens / survivedTokens).toFixed(1)}x`;
 }
 
 export interface ContextBlocksOverlayHandle {
@@ -146,7 +148,8 @@ export class ContextBlocksOverlay implements ContextBlocksOverlayHandle {
 		const blocks = this.blocks();
 		if (!this.snapshot || blocks.length === 0) {
 			this.addChild(this.theme.fg("dim", EMPTY), -1);
-			this.addChild(this.theme.fg("dim", "esc close"), -1);
+			// Reload matters most here: the sidecar may not exist yet.
+			this.addChild(this.theme.fg("dim", "r reload · esc close"), -1);
 			this.cachedLines = undefined;
 			this.rebuildRowBlocks(width);
 			return;

@@ -468,3 +468,17 @@ test("footerSegment: false hides the segment but keeps the overlay reachable", a
 	shortcut.handler(host.ctx);
 	assert.ok(host.customFactory(), "the overlay stays reachable when only the segment is off");
 });
+
+test("a schema mismatch is reported through the notify channel", async (t) => {
+	const dir = temporaryDirectory(t, "pi-open-tui-blocks-");
+	const sessionFile = join(dir, "session.jsonl");
+	writeSidecar(sessionFile, { ...SIDECAR, schemaVersion: 2 });
+	const host = runtimeHost(t, sessionFile);
+	await host.start();
+	const factory = host.footerFactory();
+	assert.ok(factory, "the footer must be installed");
+	// stderr would be wiped by the next repaint, so the warning rides the notify channel.
+	assert.equal(host.notifications.length, 1, `expected one notify, got ${JSON.stringify(host.notifications)}`);
+	assert.match(host.notifications[0]!, /schemaVersion 2/);
+	assert.doesNotMatch(renderFooter(factory, fakeTui(120, 40)), /# 2 · 3\.4k/, "a mismatched sidecar must not paint a segment");
+});

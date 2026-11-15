@@ -163,6 +163,7 @@ export default function (pi: ExtensionAPI) {
 				requestFooterRender?.();
 			},
 			config.contextBlocks.pollMs,
+			(message) => ctx.ui.notify(message, "warning"),
 		);
 	};
 
@@ -175,7 +176,7 @@ export default function (pi: ExtensionAPI) {
 		if (!config.contextBlocks.enabled || !isTuiContext(ctx)) return;
 		// Nothing armed means the watcher bailed earlier: re-arm now that the file is known.
 		if (!stopContextBlocks) startContextBlocksWatch(ctx);
-		contextBlocks = readContextBlocks(currentSessionFile(ctx));
+		contextBlocks = readContextBlocks(currentSessionFile(ctx), (message) => ctx.ui.notify(message, "warning"));
 		requestFooterRender?.();
 	};
 
@@ -189,7 +190,7 @@ export default function (pi: ExtensionAPI) {
 			const overlay = new ContextBlocksOverlay(
 				tui,
 				theme,
-				() => readContextBlocks(currentSessionFile(ctx)),
+				() => readContextBlocks(currentSessionFile(ctx), (message) => ctx.ui.notify(message, "warning")),
 				() => done(undefined),
 			);
 			return {

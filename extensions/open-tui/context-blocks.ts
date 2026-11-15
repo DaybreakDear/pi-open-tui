@@ -75,12 +75,17 @@ function toBlock(value: unknown): BcpBlockLike | undefined {
 	};
 }
 
-function toSnapshot(value: unknown): ContextBlocksSnapshot | undefined {
+/** The host's notify channel: `process.emitWarning` writes to stderr, which a
+ * full-screen TUI repaint throws away. */
+export type ContextBlocksWarn = (message: string) => void;
+
+function toSnapshot(value: unknown, warn?: ContextBlocksWarn): ContextBlocksSnapshot | undefined {
 	if (!isRecord(value)) return undefined;
 	if (value.schemaVersion !== CONTEXT_BLOCKS_SCHEMA_VERSION) {
-		if (!schemaWarningEmitted) {
+		// Warn once per process, and only when someone is listening.
+		if (!schemaWarningEmitted && warn) {
 			schemaWarningEmitted = true;
-			process.emitWarning(
+			warn(
 				`open-tui: ignoring context blocks sidecar with schemaVersion ${String(value.schemaVersion)} `
 				+ `(expected ${CONTEXT_BLOCKS_SCHEMA_VERSION})`,
 			);
@@ -112,7 +117,10 @@ function cacheSnapshot(path: string, mtimeMs: number, snapshot: ContextBlocksSna
 }
 
 /** `undefined` means "no sidecar for this session" — never an error. */
-export function readContextBlocks(sessionFile: string | undefined): ContextBlocksSnapshot | undefined {
+export function readContextBlocks(
+	sessionFile: string | undefined,
+	warn?: ContextBlocksWarn,
+): ContextBlocksSnapshot | undefined {
 	const path = contextBlocksPath(sessionFile);
 	if (!path) {
 		cacheSnapshot("", Number.NaN, undefined);
@@ -137,9 +145,19 @@ export function readContextBlocks(sessionFile: string | undefined): ContextBlock
 		cacheSnapshot(path, mtimeMs, previous);
 		return previous;
 	}
-	const snapshot = toSnapshot(parsed);
+	const snapshot = toSnapshot(parsed, warn);
 	cacheSnapshot(path, mtimeMs, snapshot);
 	return snapshot;
+}
+
+/**
+ * Poll the sidecar and hand every change to `onChange`. Returns the teardown
+ * that calls `fs.unwatchFile`; callers must invoke it on shutdown so no watcher
+ * outlives its session.
+ */
+/** `fs.watchFile` would otherwise poll at NaN or Infinity and never fire. */
+function pollInterval(pollMs: number): number {
+	return Number.isFinite(pollMs) && pollMs >= 1 ? Math.floor(pollMs) : DEFAULT_POLL_MS;
 }
 
 /**
@@ -151,15 +169,16 @@ export function watchContextBlocks(
 	getSessionFile: () => string | undefined,
 	onChange: (snapshot?: ContextBlocksSnapshot) => void,
 	pollMs = DEFAULT_POLL_MS,
+	warn?: ContextBlocksWarn,
 ): () => void {
 	let stopped = false;
 	const path = contextBlocksPath(getSessionFile());
 	const listener = (current: Stats, previous: Stats): void => {
 		if (stopped || current.mtimeMs === previous.mtimeMs) return;
-		onChange(readContextBlocks(getSessionFile()));
+		onChange(readContextBlocks(getSessionFile(), warn));
 	};
-	if (path) watchFile(path, { interval: Math.max(1, pollMs) }, listener);
-	onChange(readContextBlocks(getSessionFile()));
+	if (path) watchFile(path, { interval: pollInterval(pollMs) }, listener);
+	onChange(readContextBlocks(getSessionFile(), warn));
 	return () => {
 		if (stopped) return;
 		stopped = true;

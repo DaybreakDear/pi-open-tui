@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { utimesSync, writeFileSync } from "node:fs";
+import fs, { utimesSync, writeFileSync, type Stats } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
@@ -51,22 +52,42 @@ test("parses blocks and sums compressed tokens", (t) => {
 	assert.equal(snapshot.blocks[1]!.topic, "theme work");
 });
 
-test("schemaVersion mismatch yields undefined", (t) => {
+test("schemaVersion mismatch yields undefined and warns once", (t) => {
 	const warnings: string[] = [];
-	const emitWarning = process.emitWarning;
-	process.emitWarning = ((warning: string | Error) => {
-		warnings.push(String(warning));
-	}) as typeof process.emitWarning;
-	try {
-		const { sessionFile } = sessionWithSidecar(t, sidecar(2));
-		// Two reads: the warning is per process, not per read.
-		assert.equal(readContextBlocks(sessionFile), undefined);
-		assert.equal(readContextBlocks(sessionFile), undefined);
-	} finally {
-		process.emitWarning = emitWarning;
-	}
+	const warn = (message: string): void => {
+		warnings.push(message);
+	};
+	// Two different sidecars, so neither read can be answered from the mtime cache:
+	// dropping the once-per-process gate would produce a second warning here.
+	const first = sessionWithSidecar(t, sidecar(2));
+	const second = sessionWithSidecar(t, sidecar(2));
+
+	assert.equal(readContextBlocks(first.sessionFile, warn), undefined);
+	assert.equal(readContextBlocks(second.sessionFile, warn), undefined);
 	assert.equal(warnings.length, 1, `expected one warning, got ${JSON.stringify(warnings)}`);
 	assert.match(warnings[0]!, /schemaVersion/i);
+});
+
+test("a non-finite poll interval falls back to the default", (t) => {
+	const { sessionFile } = sessionWithSidecar(t, sidecar(1));
+	const intervals: number[] = [];
+	const originalWatchFile = fs.watchFile;
+	fs.watchFile = ((path: fs.PathLike, options: { interval?: number }, listener: (current: Stats, previous: Stats) => void) => {
+		intervals.push(options.interval ?? Number.NaN);
+		return originalWatchFile(path, options, listener);
+	}) as typeof fs.watchFile;
+	syncBuiltinESMExports();
+	t.after(() => {
+		fs.watchFile = originalWatchFile;
+		syncBuiltinESMExports();
+	});
+
+	for (const pollMs of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 0]) {
+		// `fs.watchFile` builds a timer from the interval: NaN or Infinity never fires.
+		const stop = watchContextBlocks(() => sessionFile, () => {}, pollMs);
+		stop();
+	}
+	assert.deepEqual(intervals, [1500, 1500, 1500, 1500], `unexpected intervals ${JSON.stringify(intervals)}`);
 });
 
 test("malformed json keeps previous snapshot", async (t) => {
