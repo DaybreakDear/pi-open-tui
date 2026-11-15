@@ -4,6 +4,7 @@ import type { ExtensionAPI, SourceInfo, Theme, ThemeColor, ToolRenderers } from 
 import { Box, type Component, getCapabilities, getImageDimensions, imageFallback, Spacer, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { ToolViewConfig } from "./config.ts";
 import type { IconGlyphs } from "./icons.ts";
+import { createPainter, type Painter, type SkinProvider } from "./theme.ts";
 import { codeLines, prepareToolPreview } from "./tool-preview.ts";
 import { sanitizeStatus, stripAnsi } from "./utils.ts";
 
@@ -456,22 +457,28 @@ function formatElapsed(ms: number): string {
 	return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
-/** Stable rows reuse their final lines until width, theme, icons, or invalidation changes them. */
+/** Stable rows reuse their final lines until width, theme, skin epoch, icons, or invalidation changes them. */
+/** No skin configured: Pi's own tokens, epoch 0, which is exactly the v0.4.6 behaviour. */
+const piSkin: SkinProvider = (theme: Theme) => ({ painter: createPainter(theme), epoch: 0 });
+
 function lines(
-	build: (width: number, icons: IconGlyphs) => string[],
+	build: (width: number, icons: IconGlyphs, painter: Painter) => string[],
 	theme: Theme,
 	glyphs: () => IconGlyphs,
 	cacheable = true,
+	skin: SkinProvider = piSkin,
 ): Component {
-	let cache: { width: number; colors: Theme["colors"]; toolCall: string; toolResult: string; lines: string[] } | undefined;
+	let cache: { width: number; colors: Theme["colors"]; toolCall: string; toolResult: string; skinEpoch: number; lines: string[] } | undefined;
 	return {
 		render(width) {
 			const icons = glyphs();
 			const colors = theme.colors;
-			if (cacheable && cache && cache.width === width && cache.colors === colors
+			// Resolved per render so a row built before a theme switch repaints instead of reusing its rows.
+			const { painter, epoch } = skin(theme);
+			if (cacheable && cache && cache.width === width && cache.colors === colors && cache.skinEpoch === epoch
 				&& cache.toolCall === icons.toolCall && cache.toolResult === icons.toolResult) return cache.lines;
-			const rendered = build(width, icons).map((line) => truncateToWidth(line, Math.max(0, width), "…"));
-			if (cacheable) cache = { width, colors, toolCall: icons.toolCall, toolResult: icons.toolResult, lines: rendered };
+			const rendered = build(width, icons, painter).map((line) => truncateToWidth(line, Math.max(0, width), "…"));
+			if (cacheable) cache = { width, colors, toolCall: icons.toolCall, toolResult: icons.toolResult, skinEpoch: epoch, lines: rendered };
 			return rendered;
 		},
 		invalidate() { cache = undefined; },
@@ -499,22 +506,22 @@ function stopPulse(row: RowState): void {
 }
 
 /** Pi's expanded card for a tool without its own call renderer. */
-function genericCall(toolName: string, args: unknown, theme: Theme): Component {
+function genericCall(toolName: string, args: unknown, theme: Theme, painter: Painter): Component {
 	const entries = typeof args === "object" && args !== null ? Object.entries(args) : [];
 	const rows = entries.map(([key, value]) => {
 		const shown = typeof value === "string" ? value : JSON.stringify(value, null, 2) ?? String(value);
 		return `  ${sanitizeStatus(key)}: ${cleanOutput(shown).replace(/\t/g, "   ").split("\n").join("\n    ")}`;
 	});
-	const title = theme.fg("toolTitle", theme.bold(sanitizeStatus(toolName)));
+	const title = painter.paint("toolTitle", theme.bold(sanitizeStatus(toolName)));
 	return new Text(rows.length ? `${title}\n${theme.fg("muted", rows.join("\n"))}` : title, 0, 0);
 }
 
 /** Pi's expanded card for a tool without its own result renderer. Pi still draws images it can show. */
-function genericResult(result: ToolResult, theme: Theme, context: RenderContext): Component {
+function genericResult(result: ToolResult, theme: Theme, context: RenderContext, painter: Painter): Component {
 	const inline = getCapabilities().images && context.showImages;
 	const missing = inline ? [] : result.content.flatMap((block) => (block.type === "image" ? [imageFallback(block.mimeType, getImageDimensions(block.data, block.mimeType) ?? undefined)] : []));
 	const output = [textOutput(result).replace(/\t/g, "   "), ...missing].filter(Boolean).join("\n");
-	return new Text(output ? theme.fg("toolOutput", output) : "", 0, 0);
+	return new Text(output ? painter.paint("toolOutput", output) : "", 0, 0);
 }
 
 /**
@@ -529,7 +536,9 @@ export function createCompactRenderers(
 	running?: Map<string, RowState | undefined>,
 	generic = false,
 	summarizeExtension = summarizeGeneric,
+	skin?: SkinProvider,
 ): ToolRenderers {
+	const skinFor = (theme: Theme) => (skin ?? piSkin)(theme);
 	const label = Object.hasOwn(TOOL_LABELS, toolName) ? TOOL_LABELS[toolName]! : sanitizeStatus(toolName);
 	const isShell = !generic && (toolName === "bash" || toolName === "powershell");
 	const isCodemode = !generic && toolName === "codemode";
@@ -537,9 +546,9 @@ export function createCompactRenderers(
 	const lazyNative = generic || isCodemode || isToolSearch;
 	const nativeShell = native?.renderShell;
 	const renderNativeCall: RenderCall | undefined = native?.renderCall
-		?? (lazyNative ? (args, theme) => genericCall(toolName, args, theme) : undefined);
+		?? (lazyNative ? (args, theme) => genericCall(toolName, args, theme, skinFor(theme).painter) : undefined);
 	const renderNativeResult: RenderResult | undefined = native?.renderResult
-		?? (lazyNative ? (result, _options, theme, context) => genericResult(result, theme, context) : undefined);
+		?? (lazyNative ? (result, _options, theme, context) => genericResult(result, theme, context, skinFor(theme).painter) : undefined);
 	// Expanded rows hand off to Pi's own card so nothing is hidden.
 	const showNative = (context: RenderContext) => context.expanded;
 	// A generic row that was expanded skips hidden progress but still sees the call finish, for a renderer's own timers.
@@ -590,18 +599,19 @@ export function createCompactRenderers(
 			const callArgs = (args ?? {}) as Args;
 			const detail = sanitizeStatus(generic ? genericDetail(callArgs, context.cwd) : callDetail(toolName, callArgs, context.cwd));
 			const pad = " ".repeat(context.outputPad);
-			return lines((_width, icons) => {
-				const call = pad + theme.fg(color, icons.toolCall) + " " + theme.fg(titleColor, titleColor === "dim" ? label : theme.bold(label))
+			return lines((_width, icons, painter) => {
+				const call = pad + painter.paint("toolCall", icons.toolCall, color) + " "
+					+ painter.paint(isShell ? "command" : "toolTitle", titleColor === "dim" ? label : theme.bold(label), titleColor)
 					+ (detail ? theme.fg(context.isPartial || context.isError ? "muted" : "dim", `(${detail})`) : "");
 				// Pi does not call renderResult until the tool provides its first result.
 				// Read the shared flag during rendering, after both slots have been prepared.
 				if (lazyNative && live && !row.hasResult) {
 					const elapsed = row.startedAt === undefined ? "" : ` ${formatElapsed(Date.now() - row.startedAt)}`;
-					const gutter = `${pad}  ${theme.fg("dim", icons.toolResult)}  `;
-					return [call, gutter + theme.fg("warning", `Running…${elapsed}`)];
+					const gutter = `${pad}  ${painter.paint("gutter", icons.toolResult)}  `;
+					return [call, gutter + painter.paint("warning", `Running…${elapsed}`)];
 				}
 				return [call];
-			}, theme, glyphs, !context.isPartial);
+			}, theme, glyphs, !context.isPartial, skin);
 		},
 
 		renderResult(result, options, theme, context) {
@@ -644,9 +654,9 @@ export function createCompactRenderers(
 			const body = isCodemode && !partial ? context.isError
 				? codemodeError(result) : codemodeBody(result)[0] : undefined;
 			const loaded = isToolSearch && !partial && !context.isError ? loadedTools(result) : undefined;
-			return lines((width, icons) => {
+			return lines((width, icons, painter) => {
 				const { toolResult } = icons;
-				const gutter = `${pad}  ${theme.fg("dim", toolResult)}  `;
+				const gutter = `${pad}  ${painter.paint("gutter", toolResult)}  `;
 				const indent = `${pad}  ${" ".repeat(visibleWidth(toolResult))}  `;
 				if (isCodemode) {
 					const counts = codemodeCounts(calls);
@@ -657,22 +667,24 @@ export function createCompactRenderers(
 					return [
 						...nestedCallRows(calls, theme, context.cwd, icons).map((line) => `${pad}  ${line}`),
 						gutter + theme.fg(color, status),
-						...(body ? [indent + theme.fg(context.isError ? "error" : "toolOutput", sanitizeStatus(body))] : []),
+						...(body ? [indent + (context.isError
+							? painter.paint("error", sanitizeStatus(body))
+							: painter.paint("toolOutput", sanitizeStatus(body)))] : []),
 					];
 				}
 				if (partial) {
-					if (!timed) return [gutter + theme.fg("warning", "Running…")];
+					if (!timed) return [gutter + painter.paint("warning", "Running…")];
 					const elapsed = row.startedAt === undefined ? "" : ` ${formatElapsed(Date.now() - row.startedAt)}`;
-					return [...tail.map((line) => theme.fg("toolOutput", line)), theme.fg("warning", `Running…${elapsed}`)]
+					return [...tail.map((line) => painter.paint("toolOutput", line)), painter.paint("warning", `Running…${elapsed}`)]
 						.map((line, index) => (index === 0 ? gutter : indent) + line);
 				}
-				if (context.isError) return [gutter + theme.fg("error", summary)];
+				if (context.isError) return [gutter + painter.paint("error", summary)];
 				const names = loaded?.slice(0, 3).map(sanitizeStatus).join(" · ");
 				const remaining = loaded ? Math.max(0, loaded.length - 3) : 0;
 				return [gutter + theme.fg("dim", summary),
-					...(names ? [indent + theme.fg("toolOutput", names + (remaining ? ` · +${remaining} more (ctrl+o to expand)` : ""))] : []),
+					...(names ? [indent + painter.paint("toolOutput", names + (remaining ? ` · +${remaining} more (ctrl+o to expand)` : ""))] : []),
 					...(row.preview?.render(width, indent) ?? [])];
-			}, theme, glyphs, !partial);
+			}, theme, glyphs, !partial, skin);
 		},
 	};
 }
@@ -683,7 +695,12 @@ const OWNED_TOOLS = new Set(Object.keys(TOOL_LABELS));
  * Display-only: Pi's tools, execution, arguments and results are untouched. The configuration is
  * read when Pi builds a row, so changing it affects new rows only.
  */
-export function registerToolView(pi: ExtensionAPI, getView: () => ToolViewConfig, glyphs: () => IconGlyphs): void {
+export function registerToolView(
+	pi: ExtensionAPI,
+	getView: () => ToolViewConfig,
+	glyphs: () => IconGlyphs,
+	skin?: SkinProvider,
+): void {
 	const running = new Map<string, RowState | undefined>();
 	pi.on("tool_execution_start", (event) => { running.set(event.toolCallId, undefined); });
 	pi.on("tool_execution_end", (event) => {
@@ -702,10 +719,10 @@ export function registerToolView(pi: ExtensionAPI, getView: () => ToolViewConfig
 		const sourceInfo = OWNED_TOOLS.has(toolName) || view.extensionTools && FFF_TOOLS.has(toolName)
 			? pi.getAllTools().find((tool) => tool.name === toolName)?.sourceInfo : undefined;
 		const builtin = OWNED_TOOLS.has(toolName) && sourceInfo?.source === "builtin";
-		if (builtin) return native || toolName === "tool_search" ? createCompactRenderers(toolName, native, glyphs, running) : native;
+		if (builtin) return native || toolName === "tool_search" ? createCompactRenderers(toolName, native, glyphs, running, false, undefined, skin) : native;
 		if (!view.extensionTools) return native;
 		const fff = fffKind(toolName, sourceInfo);
 		return createCompactRenderers(toolName, native, glyphs, running, true,
-			fff ? (result, duration) => summarizeFff(fff, result, duration) : summarizeGeneric);
+			fff ? (result, duration) => summarizeFff(fff, result, duration) : summarizeGeneric, skin);
 	});
 }

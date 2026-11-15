@@ -5,6 +5,7 @@ import type { OpenTuiConfig } from "./config.ts";
 import { formatCost, type CostConfig } from "./currency.ts";
 import type { FooterBuiltinSegment, FooterPosition, RegisteredFooterSegment } from "./footer-segments.ts";
 import type { IconGlyphs } from "./icons.ts";
+import { createPainter, type Painter, type SkinProvider } from "./theme.ts";
 import { resolveGlyphs, resolveIconMode, runtimeSymbol } from "./icons.ts";
 import type { GitStatus } from "./git.ts";
 import type { RuntimeInfo } from "./runtime.ts";
@@ -152,6 +153,7 @@ function renderContextBar(
 	glyphs: IconGlyphs,
 	iconMode: OpenTuiConfig["icons"]["mode"],
 	showBar: boolean,
+	painter: Painter,
 ): string {
 	const contextUsage = ctx.getContextUsage();
 	const contextWindow = contextUsage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
@@ -164,13 +166,13 @@ function renderContextBar(
 
 	const pctText = theme.fg(stressColor(contextPct), `${contextPct.toFixed(1)}%`);
 	const ctxText = `${theme.fg("text", fmtTokens(contextTokens))}${theme.fg("dim", "/")}${theme.fg("text", fmtTokens(contextWindow))}`;
-	if (!showBar) return `${pctText} ${theme.fg("dim", "·")} ${ctxText}`;
+	if (!showBar) return `${pctText} ${painter.paint("divider", "·")} ${ctxText}`;
 	const contextIcon = theme.fg(stressColor(contextPct), glyphs.context);
 	// Cap the bar at `width - reserved` (with a floor of 4) so the full form
 	// never forces the left segments out before compact/drop logic kicks in.
 	const reserved = visibleWidth(contextIcon) + visibleWidth(pctText) + visibleWidth(ctxText) + 5 + 2;
 	const barWidth = Math.max(4, Math.min(12, width - reserved));
-	return `${contextIcon} ${renderBar(theme, contextPct, barWidth, resolveIconMode(iconMode) === "ascii")} ${pctText} ${theme.fg("dim", "·")} ${ctxText}`;
+	return `${contextIcon} ${renderBar(theme, contextPct, barWidth, resolveIconMode(iconMode) === "ascii")} ${pctText} ${painter.paint("divider", "·")} ${ctxText}`;
 }
 
 function renderStatsSegments(
@@ -179,11 +181,12 @@ function renderStatsSegments(
 	glyphs: IconGlyphs,
 	segments: OpenTuiConfig["footerSegments"],
 	cost: CostConfig,
+	painter: Painter,
 ): { tokens: string; cost: string } {
 	const stats: string[] = [];
 	if (segments.tokens) {
-		stats.push(theme.fg("accent", `${glyphs.input} ${formatInputBreakdown(totals.input, totals.cacheRead)}`));
-		stats.push(theme.fg("success", `${glyphs.output} ${fmtTokens(totals.output)}`));
+		stats.push(painter.paint("stats", `${glyphs.input} ${formatInputBreakdown(totals.input, totals.cacheRead)}`));
+		stats.push(painter.paint("success", `${glyphs.output} ${fmtTokens(totals.output)}`));
 		// ponytail: hide cache-hit rate when the provider never reported cache
 		// tokens — avoids a misleading "0%" on providers without prompt caching.
 		const hasCacheTokens = totals.cacheRead > 0 || totals.cacheWrite > 0;
@@ -192,8 +195,8 @@ function renderStatsSegments(
 		}
 	}
 	return {
-		tokens: stats.join(` ${theme.fg("dim", "|")} `),
-		cost: segments.cost ? theme.fg("warning", formatCost(totals.cost, cost)) : "",
+		tokens: stats.join(` ${painter.paint("divider", "|")} `),
+		cost: segments.cost ? painter.paint("cost", formatCost(totals.cost, cost)) : "",
 	};
 }
 
@@ -214,6 +217,7 @@ function renderExtensionStatusLines(
 	extensionStatuses: ReadonlyMap<string, string>,
 	glyphs: IconGlyphs,
 	width: number,
+	painter: Painter,
 ): string[] {
 	const statuses = Array.from(extensionStatuses.entries())
 		.sort(([a], [b]) => a.localeCompare(b))
@@ -221,7 +225,7 @@ function renderExtensionStatusLines(
 		.filter((text) => text.length > 0);
 	if (statuses.length === 0) return [];
 
-	const separator = ` ${theme.fg("dim", "|")} `;
+	const separator = ` ${painter.paint("divider", "|")} `;
 	const statusText = statuses.map((status) => renderStatusText(theme, status)).join(separator);
 	const line = `${theme.fg("mdLink", glyphs.extensions)} ${statusText}`;
 	return wrapTextWithAnsi(line, width);
@@ -233,6 +237,7 @@ export interface FooterHooks {
 	getLiveTps?: () => LiveTps | null;
 	getExtensionSegments?: () => readonly RegisteredFooterSegment[];
 	canEmbedInEditor?: () => boolean;
+	getSkin?: SkinProvider;
 }
 
 interface FooterDataLike {
@@ -274,8 +279,9 @@ function fitInlineSegments(
 	parts: readonly PrioritizedSegment[],
 	width: number,
 	theme: Theme,
+	painter: Painter,
 ): string {
-	const separator = theme.fg("dim", " · ");
+	const separator = painter.paint("divider", " · ");
 	const separatorReserve = Math.max(0, parts.length - 1) * Math.max(0, visibleWidth(separator) - 1);
 	return fitSegmentsByPriority(
 		parts,
@@ -306,6 +312,7 @@ function fitContributedRow(
 	contributions: readonly RegisteredFooterSegment[],
 	width: number,
 	theme: Theme,
+	painter: Painter,
 ): InlineFooterLine | undefined {
 	let contributed = false;
 	const collect = (side: FooterSide): PrioritizedSegment[] => {
@@ -339,8 +346,8 @@ function fitContributedRow(
 	const right = collect("right");
 	if (!contributed) return undefined;
 
-	const leftSeparator = row === 1 && mode === "plain" ? " " : theme.fg("dim", " · ");
-	const rightSeparator = row === 1 ? leftSeparator : theme.fg("dim", " | ");
+	const leftSeparator = row === 1 && mode === "plain" ? " " : painter.paint("divider", " · ");
+	const rightSeparator = row === 1 ? leftSeparator : painter.paint("divider", " | ");
 	const fitted = fitSegmentsByPriority([...left, ...right], width, theme.fg("dim", "..."), {
 		compactOrder: "priority",
 		gapWidth: (previous, next) => {
@@ -372,6 +379,7 @@ function renderFooterContent(
 	width: number,
 	getLiveTps: () => LiveTps | null,
 	getExtensionSegments: () => readonly RegisteredFooterSegment[],
+	skin: SkinProvider,
 ): { mainLines: [string, string]; inlineLines: InlineFooterLines; extensionLines: string[] } {
 	if (width <= 0) {
 		return {
@@ -386,6 +394,7 @@ function renderFooterContent(
 
 	const state = getState();
 	const config = getConfig();
+	const painter = skin(theme).painter;
 	const segments = config.footerSegments;
 	const glyphs = { ...resolveGlyphs(config.icons.mode) };
 	if (segments.nerdIconSpacing) {
@@ -467,7 +476,7 @@ function renderFooterContent(
 			: null;
 		const text = liveTps === null
 			? timerSeg
-			: `${timerSeg} ${theme.fg("dim", "·")} ${theme.fg(liveTps.stale ? "dim" : "accent", `${glyphs.speed} ~${Math.round(liveTps.tps)} tok/s`)}`;
+			: `${timerSeg} ${painter.paint("divider", "·")} ${theme.fg(liveTps.stale ? "dim" : "accent", `${glyphs.speed} ~${Math.round(liveTps.tps)} tok/s`)}`;
 		// Narrow widths shed the live TPS before the timer itself.
 		leftParts.push({ text, compactText: liveTps === null ? undefined : timerSeg, priority: 3 });
 		inlineTopRightParts.push(leftParts.at(-1)!);
@@ -479,7 +488,7 @@ function renderFooterContent(
 	let contextText = "";
 	let contextCompact: string | undefined;
 	if (segments.context) {
-		contextText = renderContextBar(theme, ctx, width, glyphs, config.icons.mode, segments.contextBar);
+		contextText = renderContextBar(theme, ctx, width, glyphs, config.icons.mode, segments.contextBar, painter);
 		const compact = renderContextCompact(theme, ctx, glyphs, segments.contextBar);
 		if (compact && visibleWidth(compact) < visibleWidth(contextText)) {
 			contextCompact = compact;
@@ -496,17 +505,17 @@ function renderFooterContent(
 
 	const fitted = fitSegmentsByPriority(allParts, width, theme.fg("dim", "..."));
 	const fittedContext = contextText ? fitted.pop() ?? "" : "";
-	const contributedTop = fitContributedRow(1, "plain", builtins, contributions, width, theme);
+	const contributedTop = fitContributedRow(1, "plain", builtins, contributions, width, theme, painter);
 	const line1 = contributedTop
 		? alignContributedRow(contributedTop, width, theme)
 		: alignRight(fitted.filter(Boolean).join(" "), fittedContext, width, theme);
 
 	const inlineLeftBudget = Math.floor(width * 0.45);
-	const inlineTopLeft = fitInlineSegments(inlineTopLeftParts, inlineLeftBudget, theme);
+	const inlineTopLeft = fitInlineSegments(inlineTopLeftParts, inlineLeftBudget, theme, painter);
 	const inlineRightBudget = Math.max(0, width - visibleWidth(inlineTopLeft) - (inlineTopLeft ? 1 : 0));
-	const inlineTop: InlineFooterLine = fitContributedRow(1, "inline", builtins, contributions, width, theme) ?? {
+	const inlineTop: InlineFooterLine = fitContributedRow(1, "inline", builtins, contributions, width, theme, painter) ?? {
 		left: inlineTopLeft,
-		right: fitInlineSegments(inlineTopRightParts, inlineRightBudget, theme),
+		right: fitInlineSegments(inlineTopRightParts, inlineRightBudget, theme, painter),
 	};
 
 	const modelParts: string[] = [];
@@ -516,15 +525,15 @@ function renderFooterContent(
 	}
 	modelParts.push(theme.fg("text", meta.model));
 	if (meta.effort && meta.effort !== "off") {
-		modelParts.push(theme.fg(effortColor(meta.effort), `${glyphs.thinking} ${meta.effort}`));
+		modelParts.push(painter.paint("thinking", `${glyphs.thinking} ${meta.effort}`, effortColor(meta.effort)));
 	}
-	const modelBlock = modelParts.join(theme.fg("dim", " · "));
-	const stats = renderStatsSegments(theme, totals, glyphs, segments, config.cost);
-	const statsBlock = [stats.tokens, stats.cost].filter(Boolean).join(` ${theme.fg("dim", "|")} `);
+	const modelBlock = modelParts.join(painter.paint("divider", " · "));
+	const stats = renderStatsSegments(theme, totals, glyphs, segments, config.cost, painter);
+	const statsBlock = [stats.tokens, stats.cost].filter(Boolean).join(` ${painter.paint("divider", "|")} `);
 	builtins.model = { text: modelBlock, priority: 0 };
 	builtins.tokens = { text: stats.tokens, priority: 2 };
 	builtins.cost = { text: stats.cost, priority: 1 };
-	const contributedBottom = fitContributedRow(2, "plain", builtins, contributions, width, theme);
+	const contributedBottom = fitContributedRow(2, "plain", builtins, contributions, width, theme, painter);
 	const inlineBottom = contributedBottom ?? fitInlineLine(modelBlock, statsBlock, width, theme);
 	const line2 = contributedBottom
 		? alignContributedRow(contributedBottom, width, theme)
@@ -532,7 +541,7 @@ function renderFooterContent(
 	const mainLines: [string, string] = [line1, line2]
 		.map((line) => truncateToWidth(line, width, theme.fg("dim", "..."))) as [string, string];
 	const extensionLines = segments.extensionStatuses
-		? renderExtensionStatusLines(theme, footerData.getExtensionStatuses(), glyphs, width)
+		? renderExtensionStatusLines(theme, footerData.getExtensionStatuses(), glyphs, width, painter)
 		: [];
 	return { mainLines, inlineLines: { top: inlineTop, bottom: inlineBottom }, extensionLines };
 }
@@ -565,6 +574,7 @@ export function installFooter(
 			width,
 			hooks.getLiveTps ?? (() => null),
 			hooks.getExtensionSegments ?? (() => []),
+			hooks.getSkin ?? ((footerTheme) => ({ painter: createPainter(footerTheme, getConfig().theme), epoch: 0 })),
 		);
 
 		renderInline = (width) => getContent(width).inlineLines;

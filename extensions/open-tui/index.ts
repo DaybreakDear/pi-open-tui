@@ -3,6 +3,7 @@ import { type OpenTuiConfig, DEFAULT_CONFIG, ensureConfigExists, loadConfig, sav
 import { installCopyButtons, markCopyScope } from "./copy-buttons.ts";
 import { installEditor } from "./editor.ts";
 import { installFooter } from "./footer.ts";
+import { createSkinProvider, type SkinProvider } from "./theme.ts";
 import { createFooterSegments } from "./footer-segments.ts";
 import { installHeader } from "./header.ts";
 import { emptyGitStatus } from "./git.ts";
@@ -44,6 +45,9 @@ export default function (pi: ExtensionAPI) {
 	const turnTelemetry = new TurnTelemetryTracker();
 
 	let config: OpenTuiConfig = structuredClone(DEFAULT_CONFIG);
+	// Bumped on every config write: painters and the tool view's row cache key on it.
+	let skinEpoch = 0;
+	const skin: SkinProvider = createSkinProvider(() => config.theme, () => skinEpoch);
 	let configLoaded = false;
 	let active = false;
 	let lastCtx: ExtensionContext | undefined;
@@ -130,6 +134,7 @@ export default function (pi: ExtensionAPI) {
 					},
 					getLiveTps: () => turnTelemetry.getLiveTps(),
 					getExtensionSegments: footerSegments.getSegments,
+					getSkin: skin,
 					canEmbedInEditor: () => editor?.isFramed() ?? false,
 				},
 			);
@@ -329,7 +334,14 @@ export default function (pi: ExtensionAPI) {
 	pi.on("agent_settled", (event, ctx) => {
 		const telemetry = turnTelemetry.handle(event);
 		if (telemetry && config.enabled && config.telemetry.enabled && isTuiContext(ctx)) {
-			const message = formatTurnTelemetry(telemetry, ctx.ui.theme, config.telemetry, config.icons.mode, config.cost);
+			const message = formatTurnTelemetry(
+				telemetry,
+				ctx.ui.theme,
+				config.telemetry,
+				config.icons.mode,
+				config.cost,
+				skin(ctx.ui.theme).painter,
+			);
 			if (message) ctx.ui.notify(message, "info");
 		}
 		// Only clear the peek label when this task is still the current one.
@@ -391,6 +403,7 @@ export default function (pi: ExtensionAPI) {
 			return config.enabled ? config.toolView : { ...config.toolView, mode: "native" };
 		},
 		() => resolveGlyphs(config.icons.mode),
+		skin,
 	);
 
 	pi.registerMarkdownTransformer(markCopyScope);
@@ -403,6 +416,7 @@ export default function (pi: ExtensionAPI) {
 				: "open-tui settings apply for this session but could not be saved. Check configuration directory permissions and free space.", "warning");
 		}
 		config = nextConfig;
+		skinEpoch += 1;
 	};
 
 	registerSettingsCommand(pi, {

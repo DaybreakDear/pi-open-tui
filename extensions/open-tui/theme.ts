@@ -200,3 +200,26 @@ export function createPainter(theme: Theme, cfg: ThemeConfig = PI_THEME_CONFIG):
 		raw,
 	};
 }
+
+/**
+ * `epoch` changes whenever the configuration changes. Renderers that cache painted rows key on it,
+ * so a theme switch repaints instead of reusing rows drawn in the previous colours.
+ */
+export interface Skin {
+	painter: Painter;
+	epoch: number;
+}
+
+export type SkinProvider = (theme: Theme) => Skin;
+
+/** Rebuilds the painter for a new theme or a new configuration; otherwise the cached one is reused. */
+export function createSkinProvider(getConfig: () => ThemeConfig, getEpoch: () => number): SkinProvider {
+	let cached: { theme: Theme; epoch: number; skin: Skin } | undefined;
+	return (theme) => {
+		const epoch = getEpoch();
+		if (!cached || cached.theme !== theme || cached.epoch !== epoch) {
+			cached = { theme, epoch, skin: { painter: createPainter(theme, getConfig()), epoch } };
+		}
+		return cached.skin;
+	};
+}

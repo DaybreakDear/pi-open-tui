@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { Theme } from "@earendil-works/pi-coding-agent";
+import type { Theme, ToolRenderers } from "@earendil-works/pi-coding-agent";
+import { resolveGlyphs } from "../extensions/open-tui/icons.ts";
 import {
 	PRESET_SLOTS,
 	SLOT_TOKEN,
 	createPainter,
+	createSkinProvider,
 	resolveSlotColor,
 	type SlotName,
 	type ThemeConfig,
 } from "../extensions/open-tui/theme.ts";
+import { createCompactRenderers } from "../extensions/open-tui/tool-view.ts";
 
 const piThemeConfig: ThemeConfig = { preset: "pi", slots: {}, dividers: "line", gutter: true, banding: false };
 
@@ -138,4 +141,46 @@ test("raw returns the same function paint would apply", () => {
 	const paintDivider = painter.raw("divider");
 	assert.equal(paintDivider("|"), "<fg:dim>|");
 	assert.deepEqual(fgCalls, [{ color: "dim", text: "|" }]);
+});
+
+type RenderCallContext = Parameters<NonNullable<ToolRenderers["renderCall"]>>[2];
+
+test("the skin epoch busts the tool view's rendered-row cache", () => {
+	let epoch = 0;
+	let cfg: ThemeConfig = { preset: "pi", slots: {}, dividers: "line", gutter: true, banding: false };
+	const skin = createSkinProvider(() => cfg, () => epoch);
+	const { theme, fgCalls } = recordingTheme();
+	const row = createCompactRenderers("read", undefined, () => resolveGlyphs("unicode"), undefined, false, undefined, skin);
+	const context = {
+		args: {},
+		toolCallId: "call-1",
+		invalidate() {},
+		lastComponent: undefined,
+		state: {},
+		cwd: "/repo",
+		executionStarted: true,
+		argsComplete: true,
+		isPartial: false,
+		expanded: false,
+		showImages: false,
+		isError: false,
+		durationMs: undefined,
+		outputPad: 1,
+	} as unknown as RenderCallContext;
+	// One row component held across the switch, the way Pi keeps a rendered row alive.
+	const component = row.renderCall!({ path: "a.ts" }, theme, context);
+	const piRows = component.render(80);
+	assert.match(piRows[0]!, /<fg:success>/, "the pi preset paints with the Pi token");
+	const callsAfterFirst = fgCalls.length;
+	assert.deepEqual(component.render(80), piRows, "an unchanged skin reuses the cached rows");
+	assert.equal(fgCalls.length, callsAfterFirst, "the cached render paints nothing again");
+	cfg = { preset: "tokyo-night", slots: {}, dividers: "line", gutter: true, banding: false };
+	epoch += 1;
+	const themed = component.render(80);
+	assert.notDeepEqual(themed, piRows, "the epoch bump rebuilds the row instead of reusing it");
+	assert.ok(fgCalls.length > callsAfterFirst, "the rebuild paints again");
+	assert.match(themed[0]!, /<style>/, "the rebuilt row uses the new preset's literal colours");
+	const callsAfterThemed = fgCalls.length;
+	assert.deepEqual(component.render(80), themed, "the rebuilt row is cached under the new epoch");
+	assert.equal(fgCalls.length, callsAfterThemed, "the new epoch's cache holds too");
 });

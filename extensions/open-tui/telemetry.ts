@@ -12,6 +12,7 @@ import type {
 import type { IconMode, TelemetryConfig } from "./config.ts";
 import { DEFAULT_COST, formatRate, type CostConfig } from "./currency.ts";
 import { resolveGlyphs } from "./icons.ts";
+import { createPainter, type Painter } from "./theme.ts";
 import { finiteOrZero, fmtTokens, formatDuration, formatInputBreakdown } from "./utils.ts";
 
 const STALL_THRESHOLD_MS = 1000;
@@ -330,6 +331,7 @@ export function formatTurnTelemetry(
 	config: TelemetryConfig,
 	iconMode: IconMode,
 	cost: CostConfig = DEFAULT_COST,
+	painter: Painter = createPainter(theme),
 ): string {
 	const glyphs = resolveGlyphs(iconMode);
 	const parts: string[] = [];
@@ -351,6 +353,6 @@ export function formatTurnTelemetry(
 		parts.push(theme.fg("warning", `${glyphs.stall} stall ${telemetry.stallCount}x / ${formatTurnDuration(telemetry.stallMs)}`));
 	}
 	const rate = config.cost ? formatRate(telemetry.rateUsdPerMTokens, cost) : null;
-	if (rate !== null) parts.push(theme.fg("warning", rate));
-	return parts.join(` ${theme.fg("dim", "|")} `);
+	if (rate !== null) parts.push(painter.paint("cost", rate));
+	return parts.join(` ${painter.paint("divider", "|")} `);
 }
