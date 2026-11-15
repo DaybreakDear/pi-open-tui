@@ -4,6 +4,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { CostConfig } from "./currency.ts";
 import { DEFAULT_COST } from "./currency.ts";
 import type { IconMode } from "./icons.ts";
+import { DIVIDER_STYLES, SLOT_NAMES, THEME_PRESETS, type SlotName, type SlotValue, type ThemeConfig } from "./theme.ts";
 
 export type SettingsLanguage = "en" | "zh";
 export type CursorStyle = "block" | "bar" | "underline";
@@ -72,6 +73,8 @@ export interface OpenTuiConfig {
 	toolView: ToolViewConfig;
 	/** Currency and the manual USD→CNY rate used by the footer and telemetry. */
 	cost: CostConfig;
+	/** open-tui's own colours (slots) and the structural options built on them. */
+	theme: ThemeConfig;
 }
 
 export const DEFAULT_CONFIG: OpenTuiConfig = {
@@ -120,6 +123,13 @@ export const DEFAULT_CONFIG: OpenTuiConfig = {
 		exclude: [],
 	},
 	cost: DEFAULT_COST,
+	theme: {
+		preset: "tokyo-night",
+		slots: {},
+		dividers: "line",
+		gutter: true,
+		banding: false,
+	},
 };
 
 export function getConfigPath(): string {
@@ -143,6 +153,39 @@ function normalizeToolView(value: unknown): ToolViewConfig {
 }
 
 const ICON_MODES: IconMode[] = ["auto", "nerd", "unicode", "ascii"];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Unknown keys survive so a newer config keeps its settings, while an invalid preset falls back to
+ * the shipped default and every other field falls back individually.
+ */
+function normalizeTheme(value: unknown): ThemeConfig {
+	const source = isRecord(value) ? value : {};
+	const preset = THEME_PRESETS.includes(source.preset as ThemeConfig["preset"])
+		? (source.preset as ThemeConfig["preset"])
+		: DEFAULT_CONFIG.theme.preset;
+	const dividers = DIVIDER_STYLES.includes(source.dividers as ThemeConfig["dividers"])
+		? (source.dividers as ThemeConfig["dividers"])
+		: DEFAULT_CONFIG.theme.dividers;
+	const slots: Partial<Record<SlotName, SlotValue>> = {};
+	if (isRecord(source.slots)) {
+		for (const slot of SLOT_NAMES) {
+			const slotValue = source.slots[slot];
+			if (typeof slotValue === "string" && slotValue.trim().length > 0) slots[slot] = slotValue.trim();
+		}
+	}
+	return {
+		...source,
+		preset,
+		dividers,
+		slots,
+		gutter: typeof source.gutter === "boolean" ? source.gutter : DEFAULT_CONFIG.theme.gutter,
+		banding: typeof source.banding === "boolean" ? source.banding : DEFAULT_CONFIG.theme.banding,
+	};
+}
 
 /** Invalid currency, rate, or switch flag fall back to the defaults field by field. */
 function normalizeCost(value: unknown): CostConfig {
@@ -245,6 +288,7 @@ export function loadConfig(notify?: (msg: string, level: "warning" | "info") => 
 		}
 		config.toolView = normalizeToolView(config.toolView);
 		config.cost = normalizeCost(config.cost);
+		config.theme = normalizeTheme(config.theme);
 		return config;
 	} catch (err) {
 		notify?.(`open-tui config parse error: ${err instanceof Error ? err.message : String(err)}`, "warning");

@@ -67,3 +67,58 @@ test("a broken config file falls back to the defaults", (t) => {
 	rmSync(join(agentDir, "open-tui.json"), { recursive: true, force: true });
 	assert.ok(messages.length > 0);
 });
+
+const DEFAULT_THEME = {
+	preset: "tokyo-night" as const,
+	slots: {},
+	dividers: "line" as const,
+	gutter: true,
+	banding: false,
+};
+
+test("defaults the theme block when the config has none", (t) => {
+	const config = configWith(t, { enabled: true });
+	assert.deepEqual(config.theme, DEFAULT_THEME);
+	assert.deepEqual(DEFAULT_CONFIG.theme, DEFAULT_THEME);
+});
+
+test("keeps a valid theme block", (t) => {
+	const config = configWith(t, {
+		theme: { preset: "gruvbox-dark", slots: { thinking: "#83a598", cost: "warning" }, dividers: "dashed", gutter: false, banding: true },
+	});
+	assert.deepEqual(config.theme, {
+		preset: "gruvbox-dark",
+		slots: { thinking: "#83a598", cost: "warning" },
+		dividers: "dashed",
+		gutter: false,
+		banding: true,
+	});
+});
+
+test("falls back per field on invalid theme values", (t) => {
+	const config = configWith(t, { theme: { preset: "solarized", dividers: "wavy", gutter: "yes", banding: 1 } });
+	assert.equal(config.theme.preset, "tokyo-night");
+	assert.equal(config.theme.dividers, "line");
+	assert.equal(config.theme.gutter, DEFAULT_THEME.gutter);
+	assert.equal(config.theme.banding, DEFAULT_THEME.banding);
+
+	const nullPreset = configWith(t, { theme: { preset: null, slots: null } });
+	assert.equal(nullPreset.theme.preset, "tokyo-night");
+	assert.deepEqual(nullPreset.theme.slots, {});
+
+	const broken = configWith(t, { theme: "tokyo-night" });
+	assert.deepEqual(broken.theme, DEFAULT_THEME);
+});
+
+test("keeps slot overrides, drops unknown slots and non-string values", (t) => {
+	const config = configWith(t, {
+		theme: { slots: { thinking: "#ff0000", cost: 7, nope: "#00ff00", divider: "" } },
+	});
+	assert.deepEqual(config.theme.slots, { thinking: "#ff0000" });
+});
+
+test("an unknown key inside the theme block survives", (t) => {
+	const config = configWith(t, { theme: { preset: "pi", expandHint: "off" } });
+	assert.equal((config.theme as unknown as Record<string, unknown>).expandHint, "off");
+	assert.equal(config.theme.preset, "pi");
+});
