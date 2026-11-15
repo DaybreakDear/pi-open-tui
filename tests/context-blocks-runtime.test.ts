@@ -4,7 +4,7 @@ import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { createEventBus, type ExtensionAPI, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
-import { visibleWidth, type KeybindingsManager, type TUI } from "@earendil-works/pi-tui";
+import { visibleWidth, type KeybindingsManager, type TUI, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import { DEFAULT_CONFIG } from "../extensions/open-tui/config.ts";
 import { readContextBlocks } from "../extensions/open-tui/context-blocks.ts";
 import { ContextBlocksOverlay } from "../extensions/open-tui/context-blocks-overlay.ts";
@@ -337,4 +337,51 @@ test("the blocks overlay keeps each divider on one row and inside the terminal",
 	// The empty state is chrome-only and must fit the shortest terminal too.
 	const empty = new ContextBlocksOverlay(fakeTui(80, 12), theme, () => undefined, () => {});
 	assert.ok(empty.render(80).length <= 12, dump(empty.render(80)));
+});
+
+test("a click on a block row selects that block", (t) => {
+	const dir = temporaryDirectory(t, "pi-open-tui-blocks-");
+	const sessionFile = join(dir, "session.jsonl");
+	const names = ["ONE", "TWO", "THREE"];
+	writeSidecar(sessionFile, {
+		schemaVersion: 1,
+		producer: "billion-context-pi",
+		blocks: names.map((name, index) => ({
+			blockId: `b${index + 1}`,
+			tier: 1,
+			topic: `topic ${index + 1}`,
+			summary: `summary-marker-${name}`,
+			compressedTokens: 100 * (index + 1),
+			survivedCount: index,
+			active: false,
+			generation: 1,
+		})),
+	});
+	const press = (y: number): TuiMouseEvent => ({
+		type: "press", button: "left", x: 3, y, screenX: 3, screenY: y, width: 80, height: 24,
+		shift: false, alt: false, ctrl: false,
+	});
+
+	for (const [index, name] of names.entries()) {
+		const overlay = new ContextBlocksOverlay(fakeTui(), theme, () => readContextBlocks(sessionFile), () => {});
+		const lines = overlay.render(80).map(stripAnsi);
+		// A click selects; enter then expands whatever is selected, which makes the
+		// selection observable without changing the click semantics.
+		const row = lines.findIndex((line) => line.includes(`▸ b${index + 1}`));
+		assert.ok(row > 0, `b${index + 1} must have a header row\n${lines.join("\n")}`);
+		assert.equal(overlay.handleMouse(press(row))?.handled, true, `clicking b${index + 1}'s header must be handled`);
+		overlay.handleInput("\r");
+		const text = renderText(overlay.render(80));
+		assert.match(text, new RegExp(`summary-marker-${name}`), `clicking b${index + 1} must select b${index + 1}\n${text}`);
+		for (const other of names.filter((candidate) => candidate !== name)) {
+			assert.doesNotMatch(text, new RegExp(`summary-marker-${other}`), `clicking b${index + 1} selected b${other} instead\n${text}`);
+		}
+	}
+
+	// Chrome rows (top padding, title, header, dividers, hint, bottom padding) select nothing.
+	const chrome = new ContextBlocksOverlay(fakeTui(), theme, () => readContextBlocks(sessionFile), () => {});
+	const lines = chrome.render(80).map(stripAnsi);
+	for (const y of [0, 1, 2, 3, lines.length - 2, lines.length - 1]) {
+		assert.equal(chrome.handleMouse(press(y)), undefined, `chrome row ${y} must not select a block\n${lines.join("\n")}`);
+	}
 });

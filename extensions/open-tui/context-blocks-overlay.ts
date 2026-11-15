@@ -70,7 +70,9 @@ export class ContextBlocksOverlay implements ContextBlocksOverlayHandle {
 	private cachedLines: string[] | undefined;
 	/** Columns a child's text may occupy: the Box content box minus the child's own padding. */
 	private innerWidth = 0;
-	/** Rendered row offset → block index, for click selection. */
+	/** Parallel to `container.children`: the block index a child renders, or -1 for chrome. */
+	private readonly childOwners: number[] = [];
+	/** Rendered row (0 = the Box's top padding) → block index, or -1 for a chrome row. */
 	private readonly rowBlocks: number[] = [];
 
 	constructor(
@@ -93,8 +95,26 @@ export class ContextBlocksOverlay implements ContextBlocksOverlayHandle {
 	}
 
 	/** A child renders exactly one row because its text is truncated to `innerWidth` here. */
-	private addChild(text: string): void {
+	private addChild(text: string, owner: number): void {
 		this.container.addChild(new Text(truncateToWidth(text, this.innerWidth, "…"), CHILD_PAD_X, 0));
+		this.childOwners.push(owner);
+	}
+
+	/**
+	 * Map every rendered row to the block it belongs to so a click names a block
+	 * without assuming how many lines the chrome above it takes. A child can even
+	 * render no row at all (a whitespace-only `Text`), so the heights come from the
+	 * children themselves rather than from a fixed chrome offset.
+	 */
+	private rebuildRowBlocks(width: number): void {
+		const contentWidth = Math.max(1, width - 2 * BOX_PAD_X);
+		this.rowBlocks.length = 0;
+		for (let row = 0; row < BOX_PAD_Y; row++) this.rowBlocks.push(-1);
+		this.container.children.forEach((child, index) => {
+			const rows = child.render(contentWidth).length;
+			for (let row = 0; row < rows; row++) this.rowBlocks.push(this.childOwners[index] ?? -1);
+		});
+		for (let row = 0; row < BOX_PAD_Y; row++) this.rowBlocks.push(-1);
 	}
 
 	private blockLines(block: BcpBlockLike, index: number, width: number): string[] {
@@ -116,23 +136,25 @@ export class ContextBlocksOverlay implements ContextBlocksOverlayHandle {
 		this.layoutWidth = width;
 		this.layoutRows = this.tui.terminal.rows;
 		this.container.clear();
+		this.childOwners.length = 0;
 		this.rowBlocks.length = 0;
 		// The Box reserves `2 * BOX_PAD_X` columns and every child reserves `2 * CHILD_PAD_X`
 		// of its own, so a line wider than this wraps inside the box.
 		this.innerWidth = Math.max(8, width - 2 * BOX_PAD_X - 2 * CHILD_PAD_X);
-		this.addChild(this.theme.bold(this.theme.fg("accent", TITLE)));
+		this.addChild(this.theme.bold(this.theme.fg("accent", TITLE)), -1);
 
 		const blocks = this.blocks();
 		if (!this.snapshot || blocks.length === 0) {
-			this.addChild(this.theme.fg("dim", EMPTY));
-			this.addChild(this.theme.fg("dim", "esc close"));
+			this.addChild(this.theme.fg("dim", EMPTY), -1);
+			this.addChild(this.theme.fg("dim", "esc close"), -1);
 			this.cachedLines = undefined;
+			this.rebuildRowBlocks(width);
 			return;
 		}
 
 		this.selected = Math.min(Math.max(0, this.selected), blocks.length - 1);
-		this.addChild(this.theme.fg("dim", formatBlocksHeader(this.snapshot)));
-		this.addChild(this.theme.fg("dim", "─".repeat(this.innerWidth)));
+		this.addChild(this.theme.fg("dim", formatBlocksHeader(this.snapshot)), -1);
+		this.addChild(this.theme.fg("dim", "─".repeat(this.innerWidth)), -1);
 
 		const budget = Math.max(4, (this.layoutRows ?? 24) - CHROME_ROWS);
 		const groups = blocks.map((block, index) => this.blockLines(block, index, this.innerWidth));
@@ -151,15 +173,15 @@ export class ContextBlocksOverlay implements ContextBlocksOverlayHandle {
 		for (let index = start; index < groups.length && used < budget; index++) {
 			for (const line of groups[index]!) {
 				if (used >= budget) break;
-				this.addChild(line);
-				this.rowBlocks.push(index);
+				this.addChild(line, index);
 				used += 1;
 			}
 		}
 
-		this.addChild(this.theme.fg("dim", "─".repeat(this.innerWidth)));
-		this.addChild(this.theme.fg("dim", HINT));
+		this.addChild(this.theme.fg("dim", "─".repeat(this.innerWidth)), -1);
+		this.addChild(this.theme.fg("dim", HINT), -1);
 		this.cachedLines = undefined;
+		this.rebuildRowBlocks(width);
 	}
 
 	render(width: number): string[] {
@@ -214,9 +236,10 @@ export class ContextBlocksOverlay implements ContextBlocksOverlayHandle {
 
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
 		if (event.type !== "press") return undefined;
-		// The Box pads one row on top and one column on the left.
-		const block = this.rowBlocks[event.y - 1];
-		if (block === undefined) return undefined;
+		// `event.y` is already local to this component, so `rowBlocks` is indexed
+		// directly: row 0 is the Box's top padding and the chrome rows are -1.
+		const block = this.rowBlocks[event.y];
+		if (block === undefined || block < 0) return undefined;
 		this.selected = block;
 		this.rebuild();
 		this.invalidate();
