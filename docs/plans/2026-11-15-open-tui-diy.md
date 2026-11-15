@@ -132,6 +132,45 @@ export function formatRate(usdPerMTokens: number | null, cfg: CostConfig): strin
 
 ---
 
+
+## T1 修复轮 1（review 结论，`bfd48ba..bc016c6`）
+
+reviewer 已确认 **`$$` 重复彻底根除**：`currency.ts` 是唯一符号发送者，`footer.ts:196` 与 `telemetry.ts:353` 都只调格式化器，`icons.ts` 再无 `cost` 键。以下为待修项。
+
+### BLOCKER
+
+**B1 — 切换成功时无任何提示，且测试把缺失钉死了。**
+`index.ts:455-470` 只在 locked 分支 `ctx.ui.notify`，成功分支只有 `persistConfig` + `requestFooterRender`。当 `footerSegments.cost` 与 `telemetry.cost` 都关闭时，`ctrl+shift+m` 完全无可见反馈。而 `tests/settings-command.test.ts:606` 用 `assert.equal(host.notifications.length, 0)` 把"无提示"固化成了预期。
+修法：`persistConfig` 之后 `ctx.ui.notify(copy.notices.currencySwitched(...), "info")`，`COPY.en.zh.notices` 各加一条；`:606` 改为断言 1 条且含新货币。
+
+**B2 — locked 提示指向一个不存在的设置项。**
+`COPY.notices.currencyLocked` 说"可在 open-tui 设置中开启"，但 `switchable` 在 `settings-command.ts` 里**没有行、没有 handler**（全仓 grep 只在 `index.ts:459`、`config.ts:155` 出现）。
+修法：Settings 页加一行 `{ id: "switchable", label: copy.labels.currencySwitch, currentValue: flag(config.cost.switchable) }`，`handleSettingChange` 加 `if (itemId === "switchable") return { ...config, cost: { ...config.cost, switchable: !config.cost.switchable } }`，双语 labels + 测试。
+
+### SHOULD FIX
+
+- **S3（已完成，`bb0e2e1`）** — `docs/configuration.md` 增补 `cost` 块；两个 README 的样例从 `$ $3.60/M` 改为 `$3.60/M`，`$ / M` 措辞改为货币中立并列出 `ctrl+shift+m`。
+- **S4** — `config.ts:148-159` `normalizeCost` 返回全新字面量，**丢弃未知同级键**；`normalizeFlags`(`:161-170`) 与 `deepMerge` 都保留。`loadConfig` 在 `:247` 采用该对象且 `saveConfig` 写内存态，故首次保存设置就会删掉用户/新版写入的键。修法：`return { ...(source as Record<string, unknown>), currency, usdToCny, switchable };` + 往返测试。
+- **S5** — `currency.ts:36-40` 负数渲染成 `$-0.50`（符号在负号前）。负数可达：`state.ts:60`、`telemetry.ts:256` 只用 finite 守卫。修法：`Math.max(0, convertUsd(...))` 或显式处理符号 + 负值测试（现无）。
+- **S6** — 汇率无上限：`usdToCny: 1e300` 可通过，乘积仍 finite，而 `toFixed` 在 ≥1e21 返回指数形式 → 底栏出现 `¥6.3e+297`。修法：`currency.ts` 与 `normalizeCost` 双双 clamp 到 `[0.01, 1000]`，越界回退 `DEFAULT_COST.usdToCny`，补 `1e300` 测试。
+- **S7** — `tests/telemetry.test.ts:136,207` 只用 USD 调用（4 参，走默认 `DEFAULT_COST`），CNY 一半的 bug 从未被测试。补一例传 `{ ...DEFAULT_COST, currency: "cny" }`，断言 `¥1.07/M` 且 `output.includes("$") === false`。
+- **S8（已在 S3 文档中说明）** — `formatCost(0.0004) === "$0.000"`：计划规定的规则，不改行为，已写进 `docs/configuration.md`。
+
+### NIT（顺手修）
+
+- `telemetry.ts:353` 参数命名冲突：`config.cost`（boolean 开关）与 `cost`（`CostConfig`）同表达式中出现 → 参数改名 `currency`。
+- `currency.ts:19-21` `SYMBOLS[code] ?? SYMBOLS.usd` 的右支不可达（`Record<CurrencyCode, string>`）→ 去掉 `??`。
+- `settings-command.ts:264-270` `nextRateStep`：`RATE_STEPS.findIndex(step === current)` 用浮点严格相等，手改的 `7.4` 匹配不到 → `-1` → 跳到 `6.8`。改为取"最近/次高"梯级；并把梯级表移进 `currency.ts`（避免第二处汇率真源）。`:269` 的 `?? DEFAULT_COST.usdToCny` 不可达。
+- `settings-command.ts:100,166` `"USD $"` / `"CNY ¥"` 标签硬编码符号 → 用 `currencySymbol()` 拼（不是 `$$` 回归，只是保持单一所有者）。
+- `index.ts:455` 加一行注释：快捷键注册于扩展生命周期、非每会话。
+- `index.ts:455-470` 两个行为边界：(a) 无 `config.enabled` 守卫——功能关闭时仍会改写 `open-tui.json`；(b) 设置悬浮窗打开时切换会与悬浮窗快照冲突，下次改行会把旧货币写回。修法：悬浮窗开启时短路该快捷键（若有现成标志），或统一走 `applyConfig`。
+- `tests/footer.test.ts:1008` 的 `output.includes("$0.010")` 是**空断言**（`"$ $0.010"` 也包含它）→ 删除或加强（真正的守门是 `:1041` 的 `$` 计数与 `:1044-1058` 的 CNY 无 `$` 断言）。
+- `tests/config.test.ts:29-32` `switchable: "yes"` 断言通过的理由是错运气（`DEFAULT_COST.switchable` 恰为 `true`）→ 改断言常量本身，并补 `"false"` 用例。
+
+### 明确不做
+
+- `settingsCopy` 暴露整棵 COPY 树（原 NIT 13）：收益小、改动面大，保持现状。
+
 ## T2a — 主题 JSON 预设
 
 **已核实的事实（direct from repo）**
