@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
-import { initTheme } from "@earendil-works/pi-coding-agent";
+import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { theme as piTheme } from "../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { DEFAULT_CONFIG, loadConfig } from "../extensions/open-tui/config.ts";
@@ -26,14 +26,28 @@ test("plain mode reproduces the v0.4.6 single dim span", () => {
 
 test("key mode underlines only the keycap and keeps the body dim", () => {
 	initTheme("dark");
-	const keycap = piTheme.style(HINT_KEY, { fg: "muted", underline: true });
-	assert.match(keycap, /\x1b\[4m/, "the keycap span is underlined");
 	const out = formatExpandHint(piTheme, "key", HEAD, paintDim);
-	assert.ok(out.includes(keycap), "the keycap carries the emphasis");
-	assert.doesNotMatch(out.replace(keycap, ""), /\x1b\[4m/, "nothing else is underlined");
+	const muted = piTheme.fg("muted", HINT_KEY);
+	assert.notEqual(muted, HINT_KEY, "colour is on in this process, so the keycap is painted");
+	assert.ok(out.includes(`\x1b[4m${muted}\x1b[24m`), "the underline escapes wrap exactly the painted keycap");
+	assert.equal(out.split("\x1b[4m").length - 1, 1, "one underline opens");
+	assert.equal(out.split("\x1b[24m").length - 1, 1, "and closes once");
 	assert.equal(stripAnsi(out), `${HEAD} ${HINT_TEXT}`, "the text itself is untouched");
 	assert.ok(out.startsWith(piTheme.fg("dim", HEAD)), "the head keeps the row's span");
 	assert.ok(out.endsWith(piTheme.fg("dim", ` ${HINT_TAIL})`)), "the tail stays dim");
+});
+
+// The shape a colour-disabled process gives the renderer: `fg` paints nothing, as the repo's other
+// colourless-theme fixtures do.
+const colourlessTheme = { fg: (_color: string, text: string) => text } as unknown as Theme;
+const paintNothing = (text: string) => text;
+
+test("key mode emits the plain bytes when colour is off", () => {
+	const plain = formatExpandHint(colourlessTheme, "plain", HEAD, paintNothing);
+	const key = formatExpandHint(colourlessTheme, "key", HEAD, paintNothing);
+	assert.equal(plain, `${HEAD} ${HINT_TEXT}`);
+	assert.equal(key, plain, "byte for byte the plain rendering");
+	assert.doesNotMatch(key, /\x1b/, "no colour and no raw attribute escapes");
 });
 
 test("emphasis never changes the visible width, truncated or not", () => {

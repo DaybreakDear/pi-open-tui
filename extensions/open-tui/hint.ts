@@ -8,12 +8,19 @@ export const HINT_TAIL = "to expand";
 /** The plain form; `"plain"` paints exactly this, as v0.4.6 did. */
 export const HINT_TEXT = `(${HINT_KEY} ${HINT_TAIL})`;
 
+/** SGR 4 opens the underline and SGR 24 closes it around the keycap's painted span. */
+const UNDERLINE_ON = "\x1b[4m";
+const UNDERLINE_OFF = "\x1b[24m";
+
 /**
- * The keycap alone, one brightness step above `dim` and underlined. `theme.style` is used instead of
- * `theme.underline` because text attributes must survive a process whose chalk colour level is off.
+ * The keycap alone: one brightness step above `dim`, underlined, but only while the theme paints. `theme.fg`
+ * is the signal — it hands back escapes in a process that renders colour and its argument unchanged in one
+ * that does not — and the underline is emitted here rather than through `theme.style`/`theme.underline`,
+ * whose chalk path can drop text attributes.
  */
 function keycap(theme: Theme): string {
-	return theme.style(HINT_KEY, { fg: "muted", underline: true });
+	const label = theme.fg("muted", HINT_KEY);
+	return label === HINT_KEY ? label : `${UNDERLINE_ON}${label}${UNDERLINE_OFF}`;
 }
 
 /**
@@ -26,7 +33,8 @@ function keycap(theme: Theme): string {
  *
  * `maxWidth` truncates by visible columns. `"plain"` truncates the text before painting, exactly as
  * v0.4.6 did; `"key"` truncates the painted line so the underline survives. Underline adds SGR bytes
- * only, so both modes occupy the same width and no caller's budget changes.
+ * only, so both modes occupy the same width and no caller's budget changes. Without colour (a theme that
+ * paints nothing) the keycap span collapses, so `"key"` emits the `"plain"` bytes.
  */
 export function formatExpandHint(
 	theme: Theme,
