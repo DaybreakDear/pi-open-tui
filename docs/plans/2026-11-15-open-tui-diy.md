@@ -553,3 +553,94 @@ T4.14 → T4.15 → T4.16 → T4.17
 - `ThemeConfig.userBar` 是 T2.6 写好后才在 T3.11 用到的字段 → T3.11 回头补接口与 normalize，不要提前加。
 - `painter` 传参链是本计划最容易漏的地方：footer / tool-view / telemetry / peek 四条路径都要过一遍，`npm run typecheck` 会兜住类型，但运行时漏传会静默回落 token（可接受）。
 - `README` 与 `CHANGELOG` 必须双语同步，AGENTS.md 要求用户可见行为变更都有文档。
+
+---
+
+## T2b 修复轮 1（复审行动项）
+
+复审范围 `01087de..dd46bc9`（T1 修复 4 提交 + T2b-PART1 4 提交）。结论 **ACCEPT**，
+`preset: "pi"` 与 `c6ab680` 等价性已逐 token 核对通过；`normalizeTheme` 全部回退路径正确。
+以下是发布前必须处理的行动项。
+
+### F1（SHOULD FIX，影响默认观感 —— 优先）工具状态色被预设吞掉
+
+`extensions/open-tui/tool-view.ts:603-604`：
+
+```ts
+painter.paint("toolCall", icons.toolCall, color)
+painter.paint(isShell ? "command" : "toolTitle", …, titleColor)
+```
+
+把状态 token（`success`/`error`/`warning`/`dim`）当成 `fallback` 传入，但
+`resolveSlotColor` 对任何非 `pi` 预设都会解析出 `toolCall`/`command`/`toolTitle`，
+于是 fallback 永远不生效。出厂默认 `preset: "tokyo-night"`（`config.ts:126`）下：
+
+- 失败的工具图标显示 `#bb9af7`（紫），**不再是红色**
+- bash 标题在 error/partial 时不再变暗
+
+v0.4.6 对每个没配 `theme.preset` 的用户都是正常工作的，这是无声的功能倒退。
+`tests/theme.test.ts:134` 甚至把这个行为钉死了。
+
+**做法：按状态选槽位，而不是把状态当 fallback。**
+
+```ts
+// 状态槽位仍然是 Pi token 支撑的（"success"/"error"/"warning"/"dim" 不在 PRESET_SLOTS 里）
+const iconSlot = ok === "success" ? "success" : ok === "error" ? "error" : "toolCall";
+painter.paint(iconSlot, icons.toolCall, color);
+```
+
+标题同理：error → `"error"`、partial/警告 → `"warning"`、其余 → `"toolTitle"`。
+改完后 `tests/theme.test.ts:134` 的断言要跟着改成"状态槽位优先"，
+并新增一条测试：预设生效时失败工具图标仍走 `error` token。
+
+### F2（发布前）文档 + CHANGELOG
+
+- 两个 README 都没写新的 `theme` 配置块（`preset` / `slots` / `dividers` / `gutter` / `banding` 及默认值）
+- 没有 `0.5.0` 的 CHANGELOG 条目
+- 必须显式点出升级影响：**v0.4.6 用户什么都不改，底栏/分隔线/工具标题的配色也会变**
+  （`preset` 默认 `tokyo-night`）；`preset: "pi"` 是回到 v0.4.6 外观的逃生舱
+
+归入 T5 发布提交，不要单独散提交。
+
+### F3（低成本硬化）`colorFn` 的未知 token 保证是有条件的
+
+`extensions/open-tui/theme.ts:156-183`：
+
+```ts
+const known = (theme as { colors?: Record<string, unknown> }).colors;
+if (known === undefined || Object.hasOwn(known, value))
+```
+
+真实 `initTheme()` 下没问题（已验证 `"not-a-color"` 会回退到 `thinkingText`）。
+但若 `theme.colors` 为 `undefined`（stub 主题、或 Pi 将来改形状），未知名会直落
+`theme.fg(value as ThemeColor)`，Pi 的 `tokenAnsi` 抛 `Unknown theme color: …`，
+**异常发生在 `render()` 内部，整个状态栏会挂掉**。这是用户可控 `slots` 值唯一
+能打到渲染器的路径。
+
+**做法**：`known === undefined` 分支改为正向白名单校验（`SLOT_TOKEN` 的取值集合
+∪ Pi token 名清单），或把闭包包一层 `try { theme.fg(…) } catch { return theme.fg(token, text) }`。
+
+### F4（NIT，可顺手）其余
+
+| # | 位置 | 问题 | 处理 |
+|---|---|---|---|
+| 4 | `tool-view.ts:462` / `footer.ts:577` | 未配置皮肤时每次 render 重建 painter（两个 Map + 闭包） | 按 `theme` 标识 memoize |
+| 5 | `index.ts:426` | `skinEpoch += 1` 在 `persistConfig` 里，改图标模式也触发全量重绘 | 仅 `config.theme` 变化时自增 |
+| 6 | `currency.ts:42-44` | `currencySymbol` 丢了 `?? SYMBOLS.usd` 兜底 | 加回 |
+| 7 | `currency.ts:51-58` vs `:27-32` | 同一窗口两套兜底（`1` vs `7.15`），若暴露会差 7 倍 | 统一走 `DEFAULT_COST.usdToCny` |
+| 8 | `tests/config.test.ts:37-39` | `"false"` → `true` 断言恒过（默认就是 `true`） | 用 `switchable: false` 的配置才成为门 |
+| 9 | `tests/theme.test.ts:48` | 自指断言（`undefined === undefined` 也过） | 改断言具体 hex |
+| 10 | — | `index.ts` 的 `getSkin` 接线无测试，epoch 只被本地构造的 provider 验证 | 补一条接线测试 |
+
+注：**#11（测试字面量用 `currencySymbol()` 构建）不采纳** —— 复审核实该约定在仓库里
+并不存在（`tests/footer.test.ts:1016/1042`、`tests/telemetry.test.ts:137/208/252`、
+`tests/settings-command.test.ts:529` 都硬编码 `$`/`¥`）。新测试遵循既有约定即可；
+若要引入该约定需四个文件一起改，不在本阶段范围。
+
+### 已核实为真的实现细节（无需改动）
+
+- `nextRateStep` 全路径正确：`7.4→7.5`、梯顶 `7.5→6.8`（绕回，符合文档）、`99→6.8`、`0→6.8`
+- `switchable` 行在 editor 分组（`:286`），handler `:404`；notify 在 guard 之外，快捷键必留痕迹
+- `skinEpoch` 确实在缓存键里（`tool-view.ts:478` 比较 / `:481` 写入）且 `index.ts:426` 自增
+- `footer.test.ts:1016-1017` 是真门（旧的裸 `includes` 会被 `"$ $0.010"` 蒙混过关）
+- `theme.test.ts:58`（`SLOT_TOKEN` deepEqual）与 `:148-185`（epoch）是真门
