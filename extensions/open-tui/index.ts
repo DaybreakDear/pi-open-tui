@@ -182,6 +182,9 @@ export default function (pi: ExtensionAPI) {
 	/** Read-only overlay: it reads the sidecar and never writes it or dispatches commands. */
 	const openContextBlocksOverlay = async (ctx: ExtensionContext): Promise<void> => {
 		if (!isTuiContext(ctx)) return;
+		// `contextBlocks.enabled` covers the footer and this overlay.
+		// `footerSegment: false` only hides the segment; the overlay stays reachable.
+		if (!config.contextBlocks.enabled) return;
 		await ctx.ui.custom<void>((tui, theme, _kb, done) => {
 			const overlay = new ContextBlocksOverlay(
 				tui,

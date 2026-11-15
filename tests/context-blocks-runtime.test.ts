@@ -436,3 +436,35 @@ test("a settled turn and a compaction re-read the sidecar before the poll", asyn
 	assert.match(compacted, /# 1 · 2\.5k/, `session_compact must read the new sidecar\n${compacted}`);
 	assert.doesNotMatch(compacted, /# 2 · 3\.4k/);
 });
+
+test("contextBlocks.enabled: false closes the overlay as well as the segment", async (t) => {
+	const dir = temporaryDirectory(t, "pi-open-tui-blocks-");
+	const sessionFile = join(dir, "session.jsonl");
+	writeSidecar(sessionFile);
+	const host = runtimeHost(t, sessionFile, { contextBlocks: { ...DEFAULT_CONFIG.contextBlocks, enabled: false } });
+	await host.start();
+	const shortcut = host.shortcuts.get("ctrl+shift+c");
+	assert.ok(shortcut, "ctrl+shift+c must stay registered");
+	shortcut.handler(host.ctx);
+	assert.equal(host.customFactory(), undefined, "the shortcut must not open the overlay when disabled");
+	const command = host.commands.get("open-tui:context");
+	assert.ok(command, "open-tui:context must stay registered");
+	await command.handler("", host.ctx);
+	assert.equal(host.customFactory(), undefined, "the command must not open the overlay when disabled");
+	assert.deepEqual(host.dispatched, []);
+});
+
+test("footerSegment: false hides the segment but keeps the overlay reachable", async (t) => {
+	const dir = temporaryDirectory(t, "pi-open-tui-blocks-");
+	const sessionFile = join(dir, "session.jsonl");
+	writeSidecar(sessionFile);
+	const host = runtimeHost(t, sessionFile, { contextBlocks: { ...DEFAULT_CONFIG.contextBlocks, footerSegment: false } });
+	await host.start();
+	const factory = host.footerFactory();
+	assert.ok(factory, "the footer must be installed");
+	assert.doesNotMatch(renderFooter(factory, fakeTui(120, 40)), /# 2 · 3\.4k/);
+	const shortcut = host.shortcuts.get("ctrl+shift+c");
+	assert.ok(shortcut, "ctrl+shift+c must stay registered");
+	shortcut.handler(host.ctx);
+	assert.ok(host.customFactory(), "the overlay stays reachable when only the segment is off");
+});
