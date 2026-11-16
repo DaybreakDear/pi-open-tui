@@ -67,11 +67,16 @@ const TURN: TurnTelemetry = {
 	costUsd: 0.01,
 	measurementMs: 28_000,
 };
-/** Short label: duration and tokens only, so the rule has room at 60 columns. */
-const TURN_CONFIG = { ...DEFAULT_CONFIG.telemetry, tps: false, ttft: false, stalls: false, cost: false };
+/**
+ * Duration only: the rule caps at 80 columns and the mock theme's tags count as visible width, so the
+ * label has to stay short to be asserted whole instead of clipped.
+ */
+const TURN_CONFIG = { ...DEFAULT_CONFIG.telemetry, tps: false, ttft: false, tokens: false, stalls: false, cost: false };
 
 /** What the marker carries: the numbers, serialised — the label is formatted at render time. */
 const payloadOf = (telemetry: TurnTelemetry): string => JSON.stringify(telemetry);
+
+const TELEMETRY_SETTINGS = { config: TURN_CONFIG, iconMode: "unicode" as const, cost: DEFAULT_COST };
 
 const labelFor = (themeUsed: Theme = theme): string =>
 	formatTurnTelemetry(TURN, themeUsed, TURN_CONFIG, "unicode", DEFAULT_COST, createPainter(themeUsed, current));
@@ -121,7 +126,7 @@ test("a prototype without renderToken yields undefined instead of throwing", () 
 	// The capability probe must survive a Pi release that renames the hook.
 	markdownProto.renderToken = undefined;
 	try {
-		assert.equal(installMarkdownSkin({ theme: () => theme, config: () => config() }), undefined);
+		assert.equal(installMarkdownSkin({ theme: () => theme, config: () => config(), telemetrySettings: () => TELEMETRY_SETTINGS }), undefined);
 	} finally {
 		markdownProto.renderToken = original;
 	}
@@ -133,7 +138,7 @@ test("install is idempotent and cleanup restores the original prototype method",
 	assert.ok(cleanup, "the skin installs on a capable prototype");
 	assert.notEqual(markdownProto.renderToken, original);
 	// A second install on an already patched prototype is a no-op rather than a nested wrapper.
-	assert.equal(installMarkdownSkin({ theme: () => theme, config: () => config() }), undefined);
+	assert.equal(installMarkdownSkin({ theme: () => theme, config: () => config(), telemetrySettings: () => TELEMETRY_SETTINGS }), undefined);
 	cleanup();
 	assert.equal(markdownProto.renderToken, original);
 	// Cleaning up twice must not throw or clobber another extension's wrapper.
@@ -316,7 +321,7 @@ test("userBar: false keeps the v0.4.6 bubble byte for byte", () => {
 test("the rail comes out of the width budget instead of widening the row", () => {
 	initTheme();
 	current = config({ userBar: true });
-	const cleanup = installMarkdownSkin({ theme: () => plainTheme, config: () => current });
+	const cleanup = installMarkdownSkin({ theme: () => plainTheme, config: () => current, telemetrySettings: () => TELEMETRY_SETTINGS });
 	try {
 		// Pi pads the bubble to the width it is handed: a padded row still lands exactly on the budget
 		// (38 rendered columns plus the two rail columns) instead of overflowing by two.
@@ -355,10 +360,10 @@ test("a marker never hands its label to another Markdown instance", () => {
 		const stranger = markdownInstance();
 		// The owner never renders the rule, so its label must not be left waiting in a module slot:
 		// an unrelated Markdown on its own `---` has to stay plain.
-		assert.deepEqual(owner.renderToken?.({ type: "html", raw: marker } as Token, 60), []);
+		assert.deepEqual(owner.renderToken?.({ type: "html", raw: marker } as Token, 160), []);
 		assert.deepEqual(rule(stranger, 20), ["<dim>────────────────────</dim>"]);
 		// The owner still gets its own numbers when its own rule follows.
-		assert.ok(rule(owner, 60)[0]?.includes(labelFor(theme)));
+		assert.ok(rule(owner, 160)[0]?.includes(labelFor(theme)));
 	} finally {
 		cleanup?.();
 	}
@@ -387,8 +392,8 @@ test("a marker payload with an embedded newline still renders one padded row", (
 		const instance = markdownInstance();
 		// The marker is unvalidated text: a newline in it would break the rule into two unpadded rows.
 		const payload = payloadOf(TURN).replace("{", "{\r\n");
-		instance.renderToken?.({ type: "html", raw: `<!--pi-turn:${payload}-->` } as Token, 60);
-		const rows = rule(instance, 60);
+		instance.renderToken?.({ type: "html", raw: `<!--pi-turn:${payload}-->` } as Token, 160);
+		const rows = rule(instance, 160);
 		assert.equal(rows.length, 1);
 		assert.ok(!rows[0]?.includes("\n"), rows[0]);
 		assert.ok(rows[0]?.includes(labelFor(theme)), rows[0]);

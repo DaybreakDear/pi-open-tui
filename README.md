@@ -169,6 +169,14 @@ TPS measures provider-reported output tokens over generation time, including wai
 
 Toggle notification fields under **Telemetry → Measurements**, or live speed under **Footer → Runtime → Live TPS**. See [measurement definitions](./docs/implementation.md#usage-and-telemetry) for formulas, timing boundaries, and cache accounting.
 
+### Known limitations
+
+The divider that opens each turn carries that turn's numbers. They travel to the rule inside a hidden marker and are formatted when the rule is drawn, so a theme switch recolours the label together with the rest of the transcript.
+
+- A user message that itself contains a `---` line shows the label on both rules. Pi caches rendered blocks by the raw token, so the `---` we prepend and the author's own line share one decorated block; a transformer cannot separate them.
+- A marker that cannot be read — a hand-edited transcript, or a marker written by another release — renders a bare divider with no numbers rather than numbers from another turn.
+- A re-rendered message keeps its own label from the render that consumed it; a turn that has finished since replaces it, so a repeated identical prompt shows the latest result.
+
 ## Thinking peek
 
 With Pi's **Hide thinking** enabled, pi-open-tui replaces the hidden block's `Thinking...` label with the latest reasoning tail while the model works:

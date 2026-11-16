@@ -17,7 +17,7 @@ import { GitStatusRefresher } from "./git-refresh.ts";
 import { readRuntimeInfo } from "./runtime.ts";
 import { SessionLifecycle } from "./session-lifecycle.ts";
 import { registerSettingsCommand, settingsCopy } from "./settings-command.ts";
-import { formatTurnTelemetry, TurnTelemetryTracker } from "./telemetry.ts";
+import { formatTurnTelemetry, serializeTurnTelemetry, TurnTelemetryTracker } from "./telemetry.ts";
 import {
 	createThinkingStatsLedger,
 	createThinkingStatsTransformer,
@@ -310,6 +310,12 @@ export default function (pi: ExtensionAPI) {
 					pendingTurnSummary = undefined;
 					return next;
 				},
+				// Read when the rule is drawn: a theme switch must repaint the label, not keep the old one.
+				telemetrySettings: () => ({
+					config: config.telemetry,
+					iconMode: config.icons.mode,
+					cost: config.cost,
+				}),
 			});
 			copyButtons = installCopyButtons({
 				getTui: editor.getTui,
@@ -530,8 +536,9 @@ export default function (pi: ExtensionAPI) {
 			);
 			if (message) {
 				ctx.ui.notify(message, "info");
-				// The notify is transient; the divider keeps the same line in the transcript.
-				pendingTurnSummary = message;
+				// The notify is transient; the divider keeps the same numbers in the transcript, and formats
+				// them itself at render time so the label follows the palette rather than this moment.
+				pendingTurnSummary = serializeTurnTelemetry(telemetry);
 			}
 		}
 		// Freeze the counters before the settle timer clears the live clock below, and file them under

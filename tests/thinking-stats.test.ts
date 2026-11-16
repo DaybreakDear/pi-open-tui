@@ -234,8 +234,11 @@ const TURN: TurnTelemetry = {
 	costUsd: 0.01,
 	measurementMs: 28_000,
 };
-/** Duration and tokens only: short enough for a 40-column rule. */
-const TURN_CONFIG = { ...DEFAULT_CONFIG.telemetry, tps: false, ttft: false, stalls: false, cost: false };
+/**
+ * Duration only: the rule caps at 80 columns and the mock theme's tags count as visible width, so the
+ * label has to stay short to be asserted whole instead of clipped.
+ */
+const TURN_CONFIG = { ...DEFAULT_CONFIG.telemetry, tps: false, ttft: false, tokens: false, stalls: false, cost: false };
 
 let settings = { config: TURN_CONFIG, iconMode: "unicode" as const, cost: DEFAULT_COST };
 
@@ -282,7 +285,7 @@ test("T5b.1 the next user divider carries the settled turn metrics", () => {
 		// The marker carries the numbers, not a pre-coloured label: the colour is chosen at render.
 		assert.ok(source.startsWith("<!--pi-turn:{"), source);
 		assert.ok(source.endsWith("second"), source);
-		const [row] = divide(markdownInstance(), source, 40);
+		const [row] = divide(markdownInstance(), source, 120);
 		assert.ok(row?.includes(labelFor(theme)), row);
 		assert.ok(row?.includes("29.7s"), row);
 	} finally {
@@ -295,7 +298,7 @@ test("T5b.2 the summary is consumed once: the following message keeps a bare div
 	try {
 		markSkinScope("first", userContext);
 		pending = payloadOf(TURN);
-		assert.ok(markSkinScope("second", userContext).includes("29.7"));
+		assert.ok(markSkinScope("second", userContext).includes("29700"));
 		// A second message without a new settle gets the plain divider source, byte for byte.
 		assert.equal(markSkinScope("third", userContext), "---\n\nthird");
 		assert.equal(markSkinScope("fourth", userContext), "---\n\nfourth");
@@ -352,9 +355,9 @@ test("a decorated divider survives a re-render at another width", () => {
 		// because the one-shot summary was already consumed by the first render.
 		assert.equal(markSkinScope("second", userContext), first);
 		const instance = markdownInstance();
-		const [narrow] = divide(instance, first, 40);
+		const [narrow] = divide(instance, first, 120);
 		assert.ok(narrow?.includes(labelFor(theme)), narrow);
-		const [wide] = divide(instance, first, 60);
+		const [wide] = divide(instance, first, 160);
 		assert.ok(wide?.includes(labelFor(theme)));
 	} finally {
 		cleanup?.();
@@ -374,9 +377,9 @@ test("a theme switch repaints the label instead of keeping the settle-time colou
 		pending = payloadOf(TURN);
 		const source = markSkinScope("second", userContext);
 		const instance = markdownInstance();
-		const [cool] = divide(instance, source, 60);
+		const [cool] = divide(instance, source, 160);
 		activeTheme = warm;
-		const [repainted] = divide(instance, source, 60);
+		const [repainted] = divide(instance, source, 160);
 		assert.ok(cool?.includes(labelFor(theme)), cool);
 		assert.ok(repainted?.includes(labelFor(warm)), repainted);
 		assert.notEqual(cool, repainted);

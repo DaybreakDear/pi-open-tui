@@ -356,3 +356,55 @@ export function formatTurnTelemetry(
 	if (rate !== null) parts.push(painter.paint("cost", rate));
 	return parts.join(` ${painter.paint("divider", "|")} `);
 }
+
+/**
+ * The divider marker carries the plain numbers, never a coloured label: the label is formatted when the
+ * rule is drawn, so a theme switch repaints it instead of leaving the settle-time palette behind.
+ */
+export function serializeTurnTelemetry(telemetry: TurnTelemetry): string {
+	return JSON.stringify(telemetry);
+}
+
+function isNumber(value: unknown): value is number {
+	return typeof value === "number" && Number.isFinite(value);
+}
+
+function isOptionalNumber(value: unknown): value is number | null {
+	return value === null || isNumber(value);
+}
+
+/**
+ * The marker payload is an unvalidated text channel (hand-edited transcripts, stale markers from an
+ * older release), so every field is checked. Anything that does not parse is treated as absent.
+ */
+export function parseTurnTelemetry(payload: string): TurnTelemetry | undefined {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(payload);
+	} catch {
+		return undefined;
+	}
+	if (typeof parsed !== "object" || parsed === null) return undefined;
+	const value = parsed as Record<string, unknown>;
+	if (!isOptionalNumber(value.tps) || !isOptionalNumber(value.rateUsdPerMTokens)
+		|| !isOptionalNumber(value.measurementMs)) return undefined;
+	if (!isNumber(value.ttftMs) || !isNumber(value.totalMs) || !isNumber(value.inputTokens)
+		|| !isNumber(value.outputTokens) || !isNumber(value.cacheReadTokens) || !isNumber(value.stallMs)
+		|| !isNumber(value.stallCount) || !isNumber(value.generationMs) || !isNumber(value.totalTokens)
+		|| !isNumber(value.costUsd)) return undefined;
+	return {
+		tps: value.tps,
+		ttftMs: value.ttftMs,
+		totalMs: value.totalMs,
+		inputTokens: value.inputTokens,
+		outputTokens: value.outputTokens,
+		cacheReadTokens: value.cacheReadTokens,
+		stallMs: value.stallMs,
+		stallCount: value.stallCount,
+		rateUsdPerMTokens: value.rateUsdPerMTokens,
+		generationMs: value.generationMs,
+		totalTokens: value.totalTokens,
+		costUsd: value.costUsd,
+		measurementMs: value.measurementMs,
+	};
+}

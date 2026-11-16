@@ -1,6 +1,10 @@
 import { UserMessageComponent, type MarkdownTransformContext, type Theme } from "@earendil-works/pi-coding-agent";
 import { Markdown, truncateToWidth, visibleWidth, type MarkdownTheme, type Token } from "@earendil-works/pi-tui";
-import { createPainter, type ThemeConfig } from "./theme.ts";
+import type { IconMode, TelemetryConfig } from "./config.ts";
+import type { CostConfig } from "./currency.ts";
+import { formatTurnTelemetry, parseTurnTelemetry, type TurnTelemetry } from "./telemetry.ts";
+import { createPainter, type Painter, type ThemeConfig } from "./theme.ts";
+import { lruGet, lruSet } from "./utils.ts";
 
 /**
  * Independent from `pi-open-tui.copy-buttons`: two patches guard on their own key, so the install
@@ -21,12 +25,22 @@ const DIVIDER_TEXT = "---";
  */
 const TURN_MARKER_OPEN = "<!--pi-turn:";
 const TURN_MARKER_CLOSE = "-->";
+/**
+ * The marker carries the plain numbers, not a coloured label: `formatTurnTelemetry` runs at render
+ * time, so a theme switch repaints the label with the rule instead of keeping the settle-time palette.
+ */
+const MARKER_NEWLINES = /[\r\n]/g;
 /** Bracket columns around the label: `┤ ` and ` ├`. */
 const TURN_BRACKET_COLUMNS = 4;
 /** Rule columns kept on each side before the label is clipped instead of dropped. */
 const TURN_MIN_RULE = 2;
 /** `▌` plus its column gap: the rail is prepended outside the width Pi budgeted for the text. */
 const USER_BAR_GLYPH = "▌";
+/**
+ * Both caches are bounded: replayed history is unbounded in principle, and every entry holds a full
+ * message text plus a marker payload.
+ */
+const DIVIDER_LABEL_CAP = 256;
 /**
  * Measured, not hardcoded: `U+258C` is East Asian Ambiguous, so a terminal configured for
  * ambiguous-wide columns draws the rail two columns wide and the hardcoded 2 overflowed by one.
@@ -53,6 +67,15 @@ export interface MarkdownSkinSource {
 	config: () => ThemeConfig;
 	/** Reads and clears the turn metrics `agent_settled` left for the next user divider. */
 	consumeTurnSummary?: () => string | undefined;
+	/** Read at render time, not at settle time: the label must use the palette in force when it is drawn. */
+	telemetrySettings: () => TurnTelemetrySettings;
+}
+
+/** Everything `formatTurnTelemetry` needs besides the numbers themselves. */
+export interface TurnTelemetrySettings {
+	config: TelemetryConfig;
+	iconMode: IconMode;
+	cost: CostConfig;
 }
 
 let source: MarkdownSkinSource | undefined;
@@ -62,19 +85,23 @@ let source: MarkdownSkinSource | undefined;
  */
 let firstUserText: string | undefined;
 /**
- * Label each user message already consumed, keyed by source text for the same reason `firstUserText` is:
+ * Payload each user message already carried, keyed by source text for the same reason `firstUserText` is:
  * the transform gets no message identity. Without it a re-render would lose metrics the pending summary
- * can only hand out once. A repeated identical prompt reuses the earlier label — the price of stability.
+ * can only hand out once. A repeated identical prompt reuses the earlier payload — the price of stability.
  */
 const dividerLabels = new Map<string, string>();
-/** The label a marker token just handed to the rule that follows it in the same render pass. */
-let renderedDividerLabel: string | undefined;
+/**
+ * The numbers a marker token just handed to the rule that follows it. Keyed by the `Markdown` instance,
+ * because `this` inside `renderToken` is that instance: a marker whose rule never renders must not leak
+ * its label into an unrelated `Markdown` that draws someone else's `---` later.
+ */
+let renderedDividerTelemetry = new WeakMap<object, TurnTelemetry>();
 
 /** Called on `session_start`: the divider belongs between messages, not above the first one. */
 export function resetMarkdownSkinSession(): void {
 	firstUserText = undefined;
 	dividerLabels.clear();
-	renderedDividerLabel = undefined;
+	renderedDividerTelemetry = new WeakMap<object, TurnTelemetry>();
 }
 
 /**
@@ -112,10 +139,26 @@ function decorateRule(paint: (text: string) => string, glyph: string, total: num
 function dividerSource(markdown: string, consumed: string | undefined): string {
 	// A cache hit is still overwritten by the current summary: the numbers on screen must describe the
 	// turn that just finished, and the summary must never be left unconsumed.
-	const label = consumed ?? dividerLabels.get(markdown);
+	const label = consumed ?? lruGet(dividerLabels, markdown);
 	if (label === undefined) return `${DIVIDER_TEXT}\n\n${markdown}`;
-	dividerLabels.set(markdown, label);
+	lruSet(dividerLabels, markdown, label, DIVIDER_LABEL_CAP);
 	return `${TURN_MARKER_OPEN}${label}${TURN_MARKER_CLOSE}\n\n${DIVIDER_TEXT}\n\n${markdown}`;
+}
+
+/**
+ * The raw payload of our marker token, or `undefined` when the token is not ours. The marker is an
+ * unvalidated text channel, so newlines are stripped before use: one would split the rule in two.
+ */
+function markerPayload(token: Token): string | undefined {
+	if (token.type !== "html" || typeof token.raw !== "string") return undefined;
+	if (!token.raw.startsWith(TURN_MARKER_OPEN) || !token.raw.endsWith(TURN_MARKER_CLOSE)) return undefined;
+	return token.raw.slice(TURN_MARKER_OPEN.length, -TURN_MARKER_CLOSE.length).replace(MARKER_NEWLINES, "");
+}
+
+/** Formats the numbers with the palette in force right now, not the one that was active at settle time. */
+function formatLabel(telemetry: TurnTelemetry, current: MarkdownSkinSource, painter: Painter): string {
+	const settings = current.telemetrySettings();
+	return formatTurnTelemetry(telemetry, current.theme(), settings.config, settings.iconMode, settings.cost, painter);
 }
 
 /**
@@ -133,10 +176,13 @@ export function installMarkdownSkin(next: MarkdownSkinSource): (() => void) | un
 		styleContext?: unknown): string[] {
 		const current = source;
 		const style = current?.config().dividers ?? "none";
-		// The marker is ours: swallow it and hand its label to the rule rendered right after it.
-		if (token.type === "html" && typeof token.raw === "string"
-			&& token.raw.startsWith(TURN_MARKER_OPEN) && token.raw.endsWith(TURN_MARKER_CLOSE)) {
-			renderedDividerLabel = token.raw.slice(TURN_MARKER_OPEN.length, -TURN_MARKER_CLOSE.length);
+		// The marker is ours: swallow it and hand its numbers to the rule rendered right after it.
+		// With dividers off we do not own this channel, so a user-pasted marker stays byte-identical.
+		const payload = current && style !== "none" ? markerPayload(token) : undefined;
+		if (payload !== undefined) {
+			const telemetry = parseTurnTelemetry(payload);
+			// An unparseable payload is treated as absent: a bare rule is honest, a fabricated one is not.
+			if (telemetry !== undefined) renderedDividerTelemetry.set(this, telemetry);
 			return [];
 		}
 		if (!current || token.type !== "hr" || style === "none") {
@@ -145,8 +191,10 @@ export function installMarkdownSkin(next: MarkdownSkinSource): (() => void) | un
 		const painter = createPainter(current.theme(), current.config());
 		const glyph = style === "dashed" ? DASHED_GLYPH : LINE_GLYPH;
 		const paint = (text: string): string => painter.paint("divider", text);
-		const label = renderedDividerLabel;
-		renderedDividerLabel = undefined;
+		// Read and delete: the handoff spans exactly one token pair.
+		const telemetry = renderedDividerTelemetry.get(this);
+		if (telemetry !== undefined) renderedDividerTelemetry.delete(this);
+		const label = telemetry === undefined ? undefined : formatLabel(telemetry, current, painter);
 		const rule = label === undefined
 			? paint(glyph.repeat(Math.min(width, HR_MAX_WIDTH)))
 			: decorateRule(paint, glyph, Math.min(width, HR_MAX_WIDTH), label);
@@ -190,6 +238,6 @@ export function installMarkdownSkin(next: MarkdownSkinSource): (() => void) | un
 		source = undefined;
 		firstUserText = undefined;
 		dividerLabels.clear();
-		renderedDividerLabel = undefined;
+		renderedDividerTelemetry = new WeakMap<object, TurnTelemetry>();
 	};
 }

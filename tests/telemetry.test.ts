@@ -13,11 +13,18 @@ import {
 	type MessageUpdateEvent,
 	type Theme,
 } from "@earendil-works/pi-coding-agent";
-import { ScrollView } from "@earendil-works/pi-tui";
+import { Markdown, ScrollView, type MarkdownTheme, type Token } from "@earendil-works/pi-tui";
 import { DEFAULT_CONFIG } from "../extensions/open-tui/config.ts";
 import { DEFAULT_COST } from "../extensions/open-tui/currency.ts";
 import openTui from "../extensions/open-tui/index.ts";
-import { estimateDeltaTokens, formatTurnTelemetry, TurnTelemetryTracker } from "../extensions/open-tui/telemetry.ts";
+import { preserveEnvironment, temporaryDirectory } from "./fixtures/test-helpers.ts";
+import {
+	estimateDeltaTokens,
+	formatTurnTelemetry,
+	parseTurnTelemetry,
+	serializeTurnTelemetry,
+	TurnTelemetryTracker,
+} from "../extensions/open-tui/telemetry.ts";
 
 const theme = {
 	fg: (_color: string, text: string) => text,
@@ -489,6 +496,94 @@ test("open-tui notifies once after a complete agent run", () => {
 	assert.match(notifications[0]!, /TPS .*TTFT/);
 });
 
+test("the settled numbers reach the next user divider and are coloured at render time", async (t) => {
+	const agentDir = temporaryDirectory(t, "open-tui-divider-");
+	preserveEnvironment(t, ["PI_CODING_AGENT_DIR"]);
+	process.env.PI_CODING_AGENT_DIR = agentDir;
+
+	const palette = (wrap: (color: string, text: string) => string) => ({
+		fg: wrap,
+		bg: (_color: string, text: string) => text,
+		bold: (text: string) => text,
+		style: (text: string) => text,
+	} as unknown as Theme);
+	const cool = palette((color, text) => `<${color}>${text}</${color}>`);
+	const warm = palette((color, text) => `[${color}:${text}]`);
+
+	const handlers = new Map<string, Array<(event: any, ctx: ExtensionContext) => unknown>>();
+	const transformers: Array<(markdown: string, context: any) => string> = [];
+	const pi = {
+		on(event: string, handler: (event: any, ctx: ExtensionContext) => unknown) {
+			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+		},
+		registerCommand() {},
+		registerToolRenderer() {},
+		registerMarkdownTransformer(transformer: (markdown: string, context: any) => string) {
+			transformers.push(transformer);
+		},
+		registerShortcut() {},
+		events: createEventBus(),
+		getAllTools: () => [],
+		getThinkingLevel: () => "off",
+	} as unknown as ExtensionAPI;
+	const ctx = {
+		hasUI: true,
+		mode: "tui",
+		cwd: process.cwd(),
+		isIdle: () => false,
+		ui: {
+			theme: cool,
+			notify() {},
+			setFooter() {},
+			setHeader() {},
+			getEditorComponent: () => undefined,
+			setEditorComponent() {},
+		},
+	} as unknown as ExtensionContext;
+	const emit = async (event: string, payload: unknown) => {
+		for (const handler of handlers.get(event) ?? []) await handler(payload, ctx);
+	};
+	const message = makeMessage();
+
+	openTui(pi);
+	t.after(() => void emit("session_shutdown", { type: "session_shutdown" }));
+	await emit("session_start", { type: "session_start" });
+	await emit("agent_start", { type: "agent_start" });
+	await emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: Date.now() });
+	await emit("message_start", { type: "message_start", message });
+	await emit("message_update", update(message));
+	await emit("message_end", { type: "message_end", message });
+	await emit("turn_end", { type: "turn_end", turnIndex: 0, message, toolResults: [] });
+	await emit("agent_settled", { type: "agent_settled" });
+
+	// The user face transformer is the first one registered: the divider it emits carries the numbers.
+	const transform = transformers[0]!;
+	const source = transform("next prompt", { messageType: "user", isStreaming: false, availableWidth: 120 });
+	assert.ok(source.startsWith("<!--pi-turn:{"), source);
+
+	const instance = Object.create(Markdown.prototype) as {
+		theme: MarkdownTheme;
+		renderToken: (token: Token, width: number) => string[];
+	};
+	instance.theme = { hr: (text: string) => text } as unknown as MarkdownTheme;
+	const marker = /^<!--pi-turn:[\s\S]*?-->/.exec(source)![0];
+	const drawRule = (): string => {
+		instance.renderToken({ type: "html", raw: marker } as Token, 120);
+		return instance.renderToken({ type: "hr", raw: "---" } as Token, 120)[0]!;
+	};
+	const coolRow = drawRule();
+	// A theme switch after the settle: the label is formatted when the rule is drawn, so it follows.
+	(ctx.ui as unknown as { theme: Theme }).theme = warm;
+	const warmRow = drawRule();
+	// The numbers came out of the payload and were formatted here, not carried as pre-coloured text.
+	assert.match(coolRow, /TPS \d/, coolRow);
+	assert.ok(!coolRow.includes("{"), coolRow);
+	assert.ok(coolRow.includes("<accent>"), coolRow);
+	// Only the palette changed: the label was re-formatted for the warm theme.
+	assert.ok(warmRow.includes("[accent:"), warmRow);
+	assert.notEqual(coolRow, warmRow);
+});
+
 test("open-tui keeps a bounded peek scoped to the current assistant", async () => {
 	const terminalWidth = 120;
 	// pi-sidebar renders the transcript next to a 36-column sidebar without changing terminal.columns.
@@ -689,4 +784,31 @@ test("live TPS tracks the trailing window of the streaming message", () => {
 	endTurn(tracker, message, 1);
 	tracker.handle({ type: "agent_settled", aborted: false });
 	assert.equal(tracker.getLiveTps(), null);
+});
+
+test("the divider payload round-trips the numbers and rejects anything else", () => {
+	const telemetry = {
+		tps: 42.5,
+		ttftMs: 1_200,
+		totalMs: 29_700,
+		inputTokens: 567,
+		outputTokens: 1_200,
+		cacheReadTokens: 0,
+		stallMs: 0,
+		stallCount: 0,
+		rateUsdPerMTokens: null,
+		generationMs: 28_000,
+		totalTokens: 1_767,
+		costUsd: 0.01,
+		measurementMs: 28_000,
+	};
+	// The marker is a text channel: it must survive the JSON round-trip Pi's cache performs.
+	assert.deepEqual(parseTurnTelemetry(JSON.parse(JSON.stringify(serializeTurnTelemetry(telemetry)))), telemetry);
+	// Anything else is absent, so the divider renders bare instead of inventing numbers.
+	for (const payload of ["", "not json", "{\"tps\":1}", "[]", "null", "42", "{\"tps\":1,\"ttftMs\":\"1\"}"]) {
+		assert.equal(parseTurnTelemetry(payload), undefined, payload);
+	}
+	const partial = { ...telemetry } as Record<string, unknown>;
+	delete partial.stallMs;
+	assert.equal(parseTurnTelemetry(JSON.stringify(partial)), undefined);
 });
