@@ -16,6 +16,10 @@ import { readRuntimeInfo } from "./runtime.ts";
 import { SessionLifecycle } from "./session-lifecycle.ts";
 import { registerSettingsCommand, settingsCopy } from "./settings-command.ts";
 import { formatTurnTelemetry, TurnTelemetryTracker } from "./telemetry.ts";
+import {
+	createThinkingStatsTransformer,
+	type ThinkingStatsSnapshot,
+} from "./thinking-stats.ts";
 import { registerToolView } from "./tool-view.ts";
 import {
 	createInitialState,
@@ -48,6 +52,13 @@ function isTuiContext(ctx: ExtensionContext): boolean {
 function themeBlockChanged(previous: OpenTuiConfig["theme"], next: OpenTuiConfig["theme"]): boolean {
 	return JSON.stringify(previous) !== JSON.stringify(next);
 }
+
+/**
+ * Turn metrics for the *next* user divider, written by `agent_settled` and consumed once by the skin.
+ * Module level so the consumer handed to `installMarkdownSkin` stays a plain closure and the value
+ * survives a settings-driven reinstall; both session boundaries clear it.
+ */
+let pendingTurnSummary: string | undefined;
 
 export default function (pi: ExtensionAPI) {
 	const sessionLifecycle = new SessionLifecycle();
@@ -89,8 +100,22 @@ export default function (pi: ExtensionAPI) {
 	let thinkingStartedAt: number | undefined;
 	// Session-wide output total when this task started: the header shows the message, not the session.
 	let thinkingTokensBase: number | undefined;
+	// Frozen when the task settles: the peek's live clock is cleared shortly after, but a re-render of
+	// the settled thinking block must still find its counters.
+	let settledThinkingStats: ThinkingStatsSnapshot | undefined;
 
 	const getThinkingLevel = () => (sessionLifecycle.isCurrent() ? pi.getThinkingLevel() : "off");
+
+	/** Clock and token delta for the running thinking block; read here, never inside the transformer. */
+	const liveThinkingStats = (): ThinkingStatsSnapshot | undefined => {
+		if (thinkingStartedAt === undefined || !lastCtx) return undefined;
+		return {
+			elapsedMs: Date.now() - thinkingStartedAt,
+			tokens: getUsageTotals(lastCtx).output - (thinkingTokensBase ?? 0),
+		};
+	};
+	// Live first: at the settled render the frozen value is still the previous task's.
+	const readThinkingStats = (): ThinkingStatsSnapshot | undefined => liveThinkingStats() ?? settledThinkingStats;
 
 	/** Pi decides whether this label is visible; our toggle only controls updates. */
 	const isPeekEnabled = () => sessionLifecycle.isCurrent() && config.enabled && config.thinkingPeek.lines > 0 && active;
@@ -257,7 +282,15 @@ export default function (pi: ExtensionAPI) {
 				},
 				() => copyButtons?.editor,
 			);
-			cleanupMarkdownSkin = installMarkdownSkin({ theme: () => ctx.ui.theme, config: () => config.theme });
+			cleanupMarkdownSkin = installMarkdownSkin({
+				theme: () => ctx.ui.theme,
+				config: () => config.theme,
+				consumeTurnSummary: () => {
+					const next = pendingTurnSummary;
+					pendingTurnSummary = undefined;
+					return next;
+				},
+			});
 			copyButtons = installCopyButtons({
 				getTui: editor.getTui,
 				getTheme: () => ctx.ui.theme,
@@ -348,6 +381,8 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		sessionLifecycle.start();
 		resetMarkdownSkinSession();
+		pendingTurnSummary = undefined;
+		settledThinkingStats = undefined;
 		gitRefresher.reset();
 		lastCtx = ctx;
 		state.workingSince = undefined;
@@ -383,6 +418,7 @@ export default function (pi: ExtensionAPI) {
 		// agent_start also covers custom-message and continuation-triggered tasks
 		// that do not emit a user message_start event.
 		peekTaskEpoch++;
+		// `settledThinkingStats` is deliberately kept: a re-render of the previous block needs it.
 		state.workingSince = Date.now();
 		state.lastDoneIn = undefined;
 		startWorkingTimer();
@@ -462,8 +498,15 @@ export default function (pi: ExtensionAPI) {
 				config.cost,
 				skin(ctx.ui.theme).painter,
 			);
-			if (message) ctx.ui.notify(message, "info");
+			if (message) {
+				ctx.ui.notify(message, "info");
+				// The notify is transient; the divider keeps the same line in the transcript.
+				pendingTurnSummary = message;
+			}
 		}
+		// Freeze the thinking counters before the settle timer clears the live clock below.
+		const frozen = liveThinkingStats();
+		if (frozen) settledThinkingStats = frozen;
 		// Only clear the peek label when this task is still the current one.
 		const settleEpoch = peekTaskEpoch;
 		if (peekSettleTimer) clearTimeout(peekSettleTimer);
@@ -532,6 +575,13 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerMarkdownTransformer(markSkinScope);
 	pi.registerMarkdownTransformer(markCopyScope);
+	// The visible thinking block is Pi's Markdown, so its counters are appended there; the hidden label
+	// keeps going through `editor.setLatestHiddenThinkingLabel`. Exactly one of the two is live at a time.
+	pi.registerMarkdownTransformer(createThinkingStatsTransformer({
+		stats: readThinkingStats,
+		showCounts: () => config.thinkingPeek.showCounts,
+		dim: (text) => (lastCtx && isTuiContext(lastCtx) ? lastCtx.ui.theme.fg("dim", text) : text),
+	}));
 
 	// `requestRender` alone redraws the same bytes: Pi caches rendered lines per (text, width),
 	// so a colour change needs `invalidate` first. No editor means no mounted TUI to repaint.
