@@ -108,6 +108,8 @@ Pi themes restyle Pi; these options restyle open-tui's own surfaces. `preset` se
 | `theme.gutter` | `true` | Vertical rail beside command output. Drawn only in the compact tool view (`toolView.mode: "compact"`) |
 | `theme.banding` | `false` | Faint background on alternating tool rows |
 | `theme.userBar` | `true` | Coloured rail beside user messages |
+| `theme.bubble` | `"rounded"` | Rounded frame around assistant replies, sized to the terminal width. `off` restores the unpatched output |
+| `theme.timestamps` | `"all"` | `HH:MM` stamp per message: `all`, `assistant`, or `off`. Never adds a row |
 | `theme.expandHint` | `"plain"` | `key` underlines the `ctrl+o` keycap in expand hints; `plain` keeps the 0.4.x rendering |
 
 `preset: "pi"` renders the colour layer through Pi's tokens. It does **not** by itself restore the 0.4.6 output: `dividers`, `gutter`, `userBar`, and `thinkingPeek.showCounts` also ship on. Set them off to get the old rendering, and note that a failed tool row's title resolves to `error` regardless. Slot values accept `#RRGGBB`, `oklch(...)`, `okhsl(...)`, or a Pi token name. An **unparseable colour** falls back to the slot's preset colour; an **unknown slot name** is dropped silently, so copy the names exactly.
@@ -241,6 +243,8 @@ Pi 主题负责 Pi 本身；下列选项负责 open-tui 自己的区域。`prese
 | `theme.gutter` | `true` | 命令输出左侧的竖线。只在紧凑工具视图（`toolView.mode: "compact"`）下才画出 |
 | `theme.banding` | `false` | 交替的工具行使用淡背景 |
 | `theme.userBar` | `true` | 用户消息左侧的彩色竖条 |
+| `theme.bubble` | `"rounded"` | 助手回复外层的圆角边框，宽度随终端收放。`off` 回到未打补丁的输出 |
+| `theme.timestamps` | `"all"` | 每条消息的 `HH:MM` 时间戳：`all`、`assistant` 或 `off`。不会新增行 |
 | `theme.expandHint` | `"plain"` | 设为 `key` 会给展开提示里的 `ctrl+o` 键幅加下划线；`plain` 保持 0.4.x 的渲染 |
 
 `preset: "pi"` 让颜色层走 Pi 的 token，但**单靠它并不能**恢复 0.4.6 的渲染：`dividers`、`gutter`、`userBar` 和 `thinkingPeek.showCounts` 也都默认开启。把这几项关掉才能回到旧渲染，并注意失败工具行的标题无论如何都会落到 `error`。槽位颜色接受 `#RRGGBB`、`oklch(...)`、`okhsl(...)` 或一个 Pi token 名。**无法解析的颜色**会回退到该预设的颜色；**未知槽位名会被静默丢弃**，请照抄名称。

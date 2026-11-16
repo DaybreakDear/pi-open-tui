@@ -16,7 +16,7 @@ import {
 } from "@earendil-works/pi-tui";
 import type { CursorStyle, IconMode, OpenTuiConfig, SettingsLanguage, ThinkingPeekLines } from "./config.ts";
 import { currencySymbol, RATE_STEPS } from "./currency.ts";
-import { DIVIDER_STYLES, THEME_PRESETS, type ThemePreset } from "./theme.ts";
+import { BUBBLE_STYLES, DIVIDER_STYLES, THEME_PRESETS, TIMESTAMP_MODES, type ThemePreset } from "./theme.ts";
 
 interface SettingItem {
 	id: string;
@@ -100,6 +100,8 @@ const COPY = {
 			gutter: "Tool gutter",
 			banding: "Row banding",
 			userBar: "User message rail",
+			bubble: "Assistant bubble",
+			timestamps: "Message timestamps",
 		},
 		values: {
 			on: "On",
@@ -111,6 +113,8 @@ const COPY = {
 			icons: { auto: "Auto", nerd: "Nerd", unicode: "Unicode", ascii: "ASCII" },
 			currencies: { usd: `USD ${currencySymbol("usd")}`, cny: `CNY ${currencySymbol("cny")}` },
 			dividers: { none: "None", line: "Line", dashed: "Dashed" },
+			bubbles: { rounded: "Rounded", off: "Off" },
+			timestamps: { all: "All", assistant: "Assistant", off: "Off" },
 		},
 		notices: {
 			currencyLocked: "Currency switching is disabled. Enable it in open-tui settings.",
@@ -179,6 +183,8 @@ const COPY = {
 			gutter: "工具竖线",
 			banding: "行底色",
 			userBar: "用户消息竖条",
+			bubble: "助手气泡",
+			timestamps: "消息时间戳",
 		},
 		values: {
 			on: "开启",
@@ -190,6 +196,8 @@ const COPY = {
 			icons: { auto: "自动", nerd: "Nerd", unicode: "Unicode", ascii: "ASCII" },
 			currencies: { usd: `美元 ${currencySymbol("usd")}`, cny: `人民币 ${currencySymbol("cny")}` },
 			dividers: { none: "无", line: "实线", dashed: "虚线" },
+			bubbles: { rounded: "圆角", off: "关闭" },
+			timestamps: { all: "全部", assistant: "仅助手", off: "关闭" },
 		},
 		notices: {
 			currencyLocked: "货币切换已关闭。可在 open-tui 设置中开启。",
@@ -313,6 +321,18 @@ function cycleDividers(config: OpenTuiConfig): OpenTuiConfig {
 	return { ...config, theme: { ...config.theme, dividers: next } };
 }
 
+function cycleBubble(config: OpenTuiConfig): OpenTuiConfig {
+	const currentIdx = BUBBLE_STYLES.indexOf(config.theme.bubble ?? "rounded");
+	const next = BUBBLE_STYLES[(currentIdx + 1) % BUBBLE_STYLES.length]!;
+	return { ...config, theme: { ...config.theme, bubble: next } };
+}
+
+function cycleTimestamps(config: OpenTuiConfig): OpenTuiConfig {
+	const currentIdx = TIMESTAMP_MODES.indexOf(config.theme.timestamps ?? "all");
+	const next = TIMESTAMP_MODES[(currentIdx + 1) % TIMESTAMP_MODES.length]!;
+	return { ...config, theme: { ...config.theme, timestamps: next } };
+}
+
 function buildIconsItems(config: OpenTuiConfig, copy: SettingsCopy): SettingGroup[] {
 	const flag = (value: boolean) => value ? copy.values.on : copy.values.off;
 	// Only the compact tool renderer paints the gutter (tool-view.ts), so an enabled gutter in
@@ -340,6 +360,8 @@ function buildIconsItems(config: OpenTuiConfig, copy: SettingsCopy): SettingGrou
 				{ id: "themeGutter", label: gutterNeedsCompact ? `${copy.labels.gutter} ${copy.hints.gutterNeedsCompact}` : copy.labels.gutter, currentValue: flag(config.theme.gutter) },
 				{ id: "themeBanding", label: copy.labels.banding, currentValue: flag(config.theme.banding) },
 				{ id: "themeUserBar", label: copy.labels.userBar, currentValue: flag(config.theme.userBar) },
+				{ id: "themeBubble", label: copy.labels.bubble, currentValue: copy.values.bubbles[config.theme.bubble ?? "rounded"] },
+				{ id: "themeTimestamps", label: copy.labels.timestamps, currentValue: copy.values.timestamps[config.theme.timestamps ?? "all"] },
 				// Message rendering sits with the other visual rows; it used to be on General, where
 				// nobody looked for it.
 				{ id: "thinkingPeek", label: copy.labels.thinkingPeek, currentValue: formatThinkingPeekLines(config.thinkingPeek.lines, copy) },
@@ -468,6 +490,8 @@ function handleSettingChange(
 		if (itemId === "themeGutter") return { ...config, theme: { ...config.theme, gutter: !config.theme.gutter } };
 		if (itemId === "themeBanding") return { ...config, theme: { ...config.theme, banding: !config.theme.banding } };
 		if (itemId === "themeUserBar") return { ...config, theme: { ...config.theme, userBar: !config.theme.userBar } };
+		if (itemId === "themeBubble") return cycleBubble(config);
+		if (itemId === "themeTimestamps") return cycleTimestamps(config);
 		if (itemId === "thinkingPeek") return cycleThinkingPeek(config);
 		if (itemId === "thinkingPeekCounts") {
 			return { ...config, thinkingPeek: { ...config.thinkingPeek, showCounts: !config.thinkingPeek.showCounts } };

@@ -99,7 +99,8 @@ test("T6.2 the inner component is rendered at width minus the measured borders",
 	try {
 		const rows = AssistantMessageComponent.prototype.render.call(inner, 40);
 		assert.deepEqual(seen, [40 - BUBBLE_LEFT_RESERVE - BUBBLE_RIGHT_RESERVE]);
-		assert.equal(rows[1], `│ ${"inner".padEnd(36)} │`);
+		// Pi's container prefixes OSC 133 markers, so compare the visible row.
+		assert.equal(stripTerminalSequences(rows[1]!), `│ ${"inner".padEnd(36)} │`);
 		for (const row of rows) assert.equal(visibleWidth(row), 40);
 	} finally {
 		cleanup?.();

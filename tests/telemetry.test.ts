@@ -561,7 +561,13 @@ test("open-tui keeps a bounded peek scoped to the current assistant", async () =
 	process.env.PI_CODING_AGENT_DIR = agentDir;
 	await writeFile(
 		join(agentDir, "open-tui.json"),
-		JSON.stringify({ ...DEFAULT_CONFIG, thinkingPeek: { lines: 2 } }),
+		// The bubble's frame adds rows of its own (tests/bubble.test.ts); this fixture measures the
+		// hidden-thinking block, so it renders unframed.
+		JSON.stringify({
+			...DEFAULT_CONFIG,
+			thinkingPeek: { lines: 2 },
+			theme: { ...DEFAULT_CONFIG.theme, bubble: "off" },
+		}),
 		"utf8",
 	);
 	initTheme();

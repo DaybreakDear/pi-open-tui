@@ -30,6 +30,11 @@ export type DividerStyle = "none" | "line" | "dashed";
  */
 export type ExpandHint = "plain" | "key";
 
+export type BubbleStyle = "rounded" | "off";
+
+/** `assistant` stamps replies only; `off` paints nothing at all. */
+export type TimestampMode = "all" | "assistant" | "off";
+
 export interface ThemeConfig {
 	preset: ThemePreset;
 	/** Per-slot overrides; they beat the preset and the Pi token. */
@@ -44,6 +49,10 @@ export interface ThemeConfig {
 	userBar: boolean;
 	/** Absent behaves like `"plain"`, so a literal without the key renders the v0.4.6 hint. */
 	expandHint?: ExpandHint;
+	/** Rounded frame around assistant replies. Absent behaves like `"rounded"`; `"off"` renders unpatched. */
+	bubble?: BubbleStyle;
+	/** `HH:MM` stamps on messages. Absent behaves like `"all"`; `"off"` renders unpatched. */
+	timestamps?: TimestampMode;
 }
 
 export const SLOT_NAMES: readonly SlotName[] = [
@@ -67,6 +76,10 @@ export const THEME_PRESETS: readonly ThemePreset[] = ["pi", "tokyo-night", "catp
 export const DIVIDER_STYLES: readonly DividerStyle[] = ["none", "line", "dashed"];
 
 export const EXPAND_HINTS: readonly ExpandHint[] = ["plain", "key"];
+
+export const BUBBLE_STYLES: readonly BubbleStyle[] = ["rounded", "off"];
+
+export const TIMESTAMP_MODES: readonly TimestampMode[] = ["all", "assistant", "off"];
 
 /**
  * The Pi token each slot fell back to before the slot layer existed (v0.4.6). `preset: "pi"` with no
@@ -144,7 +157,16 @@ export const PRESET_SLOTS: Record<Exclude<ThemePreset, "pi">, Partial<Record<Slo
 };
 
 /** Used when no theme block is configured: identical to `preset: "pi"`. */
-export const PI_THEME_CONFIG: ThemeConfig = { preset: "pi", slots: {}, dividers: "line", gutter: true, banding: false, userBar: true };
+export const PI_THEME_CONFIG: ThemeConfig = {
+	preset: "pi",
+	slots: {},
+	dividers: "line",
+	gutter: true,
+	banding: false,
+	userBar: true,
+	bubble: "rounded",
+	timestamps: "all",
+};
 
 /** Slot overrides win over the preset; `pi` contributes no preset colours. */
 export function resolveSlotColor(cfg: ThemeConfig, slot: SlotName): SlotValue | undefined {

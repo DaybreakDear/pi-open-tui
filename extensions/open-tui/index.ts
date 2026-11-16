@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { TuiMouseEvent } from "@earendil-works/pi-tui";
 import { type OpenTuiConfig, DEFAULT_CONFIG, ensureConfigExists, loadConfig, saveConfig } from "./config.ts";
 import { installCopyButtons, markCopyScope } from "./copy-buttons.ts";
+import { installBubble } from "./bubble.ts";
 import { installMarkdownSkin, markSkinScope, resetMarkdownSkinSession } from "./markdown-skin.ts";
 import { installEditor } from "./editor.ts";
 import { installFooter } from "./footer.ts";
@@ -82,6 +83,7 @@ export default function (pi: ExtensionAPI) {
 	let editor: ReturnType<typeof installEditor> | undefined;
 	let copyButtons: ReturnType<typeof installCopyButtons> | undefined;
 	let cleanupMarkdownSkin: (() => void) | undefined;
+	let cleanupBubble: (() => void) | undefined;
 	let pendingUiChange: PendingUiChange | undefined;
 	const footerSegments = createFooterSegments(pi.events, () => requestFooterRender?.());
 	const gitRefresher = new GitStatusRefresher((git) => {
@@ -296,6 +298,8 @@ export default function (pi: ExtensionAPI) {
 				getTheme: () => ctx.ui.theme,
 				isEnabled: () => config.copyButtons,
 			});
+			// Installed after the skin and the copy buttons so the frame wraps their output.
+			cleanupBubble = installBubble({ theme: () => ctx.ui.theme, config: () => config.theme });
 			active = true;
 			if (requestFooterRender) footerSegments.activate();
 			startContextBlocksWatch(ctx);
@@ -309,8 +313,11 @@ export default function (pi: ExtensionAPI) {
 		if (active) {
 			cleanupHeader?.();
 			cleanupFooter?.();
+			// Reverse of the install order: bubble, copy buttons, markdown skin.
+			cleanupBubble?.();
 			copyButtons?.cleanup();
 			cleanupMarkdownSkin?.();
+			cleanupBubble = undefined;
 			cleanupMarkdownSkin = undefined;
 			editor?.cleanup();
 			cleanupHeader = undefined;

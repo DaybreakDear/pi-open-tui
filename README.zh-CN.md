@@ -79,7 +79,9 @@ Pi 主题只改造 Pi 本身。open-tui 另用十三个槽位给自己的区域�
     "gutter": true,
     "banding": false,
     "userBar": true,
-    "expandHint": "plain"
+    "expandHint": "plain",
+    "bubble": "rounded",
+    "timestamps": "all"
   }
 }
 ```
@@ -93,6 +95,10 @@ Pi 主题只改造 Pi 本身。open-tui 另用十三个槽位给自己的区域�
 | `banding` | `false` | 交替的工具行使用淡背景 |
 | `userBar` | `true` | 用户消息左侧的彩色竖条 |
 | `expandHint` | `"plain"` | 设为 `key` 会给展开提示里的 `ctrl+o` 键幅加下划线 |
+| `bubble` | `"rounded"` | 助手回复外层的圆角框，占用宽度预算而不额外撑宽。`off` 逐字节回到未打补丁的渲染 |
+| `timestamps` | `"all"` | 每条消息的 `HH:MM` 时间戳：`all`、`assistant` 或 `off`。写在气泡顶边框或 Pi 本来就预留的空白行上，不新增行 |
+
+> **已知取舍：** 边框的 `│` 和 `─` 是真实字符，终端鼠标框选复制时会连同回复一起带上——Pi 复制时只剥 ANSI，没有排除边框字符的钩子。
 
 可覆盖的槽位。未知槽位名会被**静默丢弃**，请照表抄：
 

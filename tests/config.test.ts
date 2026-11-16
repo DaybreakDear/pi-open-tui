@@ -98,6 +98,8 @@ const DEFAULT_THEME = {
 	banding: false,
 	userBar: true,
 	expandHint: "plain" as const,
+	bubble: "rounded" as const,
+	timestamps: "all" as const,
 };
 
 test("defaults the theme block when the config has none", (t) => {
@@ -118,6 +120,8 @@ test("keeps a valid theme block", (t) => {
 		banding: true,
 		userBar: true,
 		expandHint: "plain",
+		bubble: "rounded",
+		timestamps: "all",
 	});
 });
 
@@ -129,12 +133,14 @@ test("falls back on a non-boolean userBar and thinking peek counts", (t) => {
 });
 
 test("falls back per field on invalid theme values", (t) => {
-	const config = configWith(t, { theme: { preset: "solarized", dividers: "wavy", gutter: "yes", banding: 1, expandHint: "sparkle" } });
+	const config = configWith(t, { theme: { preset: "solarized", dividers: "wavy", gutter: "yes", banding: 1, expandHint: "sparkle", bubble: "wide", timestamps: "none" } });
 	assert.equal(config.theme.preset, "tokyo-night");
 	assert.equal(config.theme.dividers, "line");
 	assert.equal(config.theme.gutter, DEFAULT_THEME.gutter);
 	assert.equal(config.theme.banding, DEFAULT_THEME.banding);
 	assert.equal(config.theme.expandHint, DEFAULT_THEME.expandHint);
+	assert.equal(config.theme.bubble, DEFAULT_THEME.bubble);
+	assert.equal(config.theme.timestamps, DEFAULT_THEME.timestamps);
 
 	const nullPreset = configWith(t, { theme: { preset: null, slots: null } });
 	assert.equal(nullPreset.theme.preset, "tokyo-night");

@@ -79,7 +79,9 @@ A Pi theme restyles Pi. open-tui additionally paints its own surfaces through th
     "gutter": true,
     "banding": false,
     "userBar": true,
-    "expandHint": "plain"
+    "expandHint": "plain",
+    "bubble": "rounded",
+    "timestamps": "all"
   }
 }
 ```
@@ -93,6 +95,10 @@ A Pi theme restyles Pi. open-tui additionally paints its own surfaces through th
 | `banding` | `false` | Alternate tool rows get a faint background |
 | `userBar` | `true` | A coloured rail beside user messages |
 | `expandHint` | `"plain"` | `key` underlines the `ctrl+o` keycap in expand hints |
+| `bubble` | `"rounded"` | A rounded frame around assistant replies that spends the width budget instead of adding columns. `off` restores the unpatched render, byte for byte |
+| `timestamps` | `"all"` | An `HH:MM` stamp per message: `all`, `assistant`, or `off`. It rides the bubble's top border, or the blank line Pi already reserves, and never adds a row |
+
+> **Known trade-off:** the frame's `│` and `─` are real cells, so Pi's mouse selection copies them along with the reply — Pi strips ANSI on copy and has no hook for excluding border glyphs.
 
 Overridable slots — an unknown name is dropped silently, so copy these exactly:
 
