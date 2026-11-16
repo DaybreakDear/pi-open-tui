@@ -509,11 +509,12 @@ test("normalizes invalid settings values", (t) => {
 	assert.equal("fullscreen" in loaded, true);
 });
 
-test("cycles the thinking peek line count from General settings", async () => {
+test("cycles the thinking peek line count from Appearance", async () => {
 	const config = structuredClone(DEFAULT_CONFIG);
 	const settings = await openSettings(config);
-	// Enabled → Header → Language → Thinking peek
-	settings.press("\x1b[B", 3);
+	// Appearance → … → User message rail → Thinking peek
+	settings.component.handleInput("\t");
+	settings.press("\x1b[B", 10);
 	assert.match(selectedLine(settings.component), /Thinking peek/);
 	assert.match(selectedLine(settings.component), /1 line/);
 	settings.component.handleInput("\r");
@@ -525,10 +526,11 @@ test("cycles the thinking peek line count from General settings", async () => {
 	settings.component.handleInput("q");
 });
 
-test("toggles the thinking peek counts from General settings", async () => {
+test("toggles the thinking peek counts from Appearance", async () => {
 	const settings = await openSettings();
-	// Enabled → Header → Language → Thinking peek → Thinking peek counts
-	settings.press("\x1b[B", 4);
+	// Appearance → … → Thinking peek → Thinking peek counts
+	settings.component.handleInput("\t");
+	settings.press("\x1b[B", 11);
 	assert.match(selectedLine(settings.component), /Thinking peek counts/);
 	assert.match(selectedLine(settings.component), /On/);
 
@@ -775,5 +777,38 @@ test("the tool gutter hint disappears in the compact tool view", async () => {
 	const line = rowLine(settings.component, /Tool gutter/);
 	assert.doesNotMatch(line, /needs compact|需 compact/);
 	assert.match(line, /Tool gutter.*On/);
+	settings.component.handleInput("q");
+});
+
+// The thinking-peek rows used to sit on the General page while every other visual row was on
+// Appearance, so users concluded the feature did not exist.
+test("the Appearance page owns the thinking peek rows", async () => {
+	const settings = await openSettings();
+	settings.component.handleInput("\t");
+
+	const appearance = settings.component.render(80);
+	assert.ok(appearance.some((line) => /Thinking peek\s/.test(line)), appearance.join("\n"));
+	assert.ok(appearance.some((line) => line.includes("Thinking peek counts")), appearance.join("\n"));
+	settings.component.handleInput("q");
+});
+
+test("the General page no longer carries the thinking peek rows", async () => {
+	const settings = await openSettings();
+	assert.doesNotMatch(settings.component.render(80).join("\n"), /Thinking peek/);
+	settings.component.handleInput("q");
+});
+
+test("the Appearance page still fits a 24-row terminal after the move", async () => {
+	const settings = await openSettings();
+	settings.component.handleInput("\t");
+	assert.equal(settings.terminal.rows, 24);
+
+	// Every row visible at once: neither clipped nor scrolled to a subset.
+	const lines = settings.component.render(80);
+	assert.ok(lines.length <= 24, `${lines.length} rows`);
+	assert.doesNotMatch(lines.join("\n"), /\(\d+\/\d+\)/, "the Appearance page must not need a scroll indicator in 24 rows");
+	for (const label of ["Icon mode", "Theme preset", "User message rail", "Thinking peek", "Thinking peek counts"]) {
+		assert.ok(lines.some((line) => line.includes(label)), `${label} is clipped: ${lines.length} rows`);
+	}
 	settings.component.handleInput("q");
 });
