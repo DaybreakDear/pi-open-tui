@@ -8,7 +8,10 @@ import {
 	markSkinScope,
 	resetMarkdownSkinSession,
 } from "../extensions/open-tui/markdown-skin.ts";
-import type { ThemeConfig } from "../extensions/open-tui/theme.ts";
+import { DEFAULT_CONFIG } from "../extensions/open-tui/config.ts";
+import { DEFAULT_COST } from "../extensions/open-tui/currency.ts";
+import { formatTurnTelemetry, type TurnTelemetry } from "../extensions/open-tui/telemetry.ts";
+import { createPainter, type ThemeConfig } from "../extensions/open-tui/theme.ts";
 
 const theme = {
 	fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
@@ -44,20 +47,48 @@ function config(overrides: Partial<ThemeConfig> = {}): ThemeConfig {
 }
 
 let current: ThemeConfig = config();
-/** The turn summary `agent_settled` would leave for the next divider; the skin consumes it once. */
+/** The turn summary `agent_settled` would leave for the next divider: numbers only, never colour. */
 let pending: string | undefined;
+/** The theme the skin reads at render time; a "theme switch" is just a new value here. */
+let activeTheme: Theme = theme;
+
+const TURN: TurnTelemetry = {
+	tps: 42.5,
+	ttftMs: 1_200,
+	totalMs: 29_700,
+	inputTokens: 567,
+	outputTokens: 1_200,
+	cacheReadTokens: 0,
+	stallMs: 0,
+	stallCount: 0,
+	rateUsdPerMTokens: null,
+	generationMs: 28_000,
+	totalTokens: 1_767,
+	costUsd: 0.01,
+	measurementMs: 28_000,
+};
+/** Short label: duration and tokens only, so the rule has room at 60 columns. */
+const TURN_CONFIG = { ...DEFAULT_CONFIG.telemetry, tps: false, ttft: false, stalls: false, cost: false };
+
+/** What the marker carries: the numbers, serialised — the label is formatted at render time. */
+const payloadOf = (telemetry: TurnTelemetry): string => JSON.stringify(telemetry);
+
+const labelFor = (themeUsed: Theme = theme): string =>
+	formatTurnTelemetry(TURN, themeUsed, TURN_CONFIG, "unicode", DEFAULT_COST, createPainter(themeUsed, current));
 
 const startSkin = () => {
 	resetMarkdownSkinSession();
 	pending = undefined;
+	activeTheme = theme;
 	return installMarkdownSkin({
-		theme: () => theme,
+		theme: () => activeTheme,
 		config: () => current,
 		consumeTurnSummary: () => {
 			const next = pending;
 			pending = undefined;
 			return next;
 		},
+		telemetrySettings: () => ({ config: TURN_CONFIG, iconMode: "unicode", cost: DEFAULT_COST }),
 	});
 };
 
@@ -309,5 +340,93 @@ test("the rail comes out of the width budget instead of widening the row", () =>
 	} finally {
 		cleanup?.();
 		current = config();
+	}
+});
+
+test("a marker never hands its label to another Markdown instance", () => {
+	const cleanup = startSkin();
+	try {
+		assert.equal(markSkinScope("first", context()), "first");
+		pending = payloadOf(TURN);
+		const source = markSkinScope("second", context());
+		const marker = /^<!--pi-turn:[\s\S]*?-->/.exec(source)?.[0] ?? "";
+		assert.ok(marker.startsWith("<!--pi-turn:"), source);
+		const owner = markdownInstance();
+		const stranger = markdownInstance();
+		// The owner never renders the rule, so its label must not be left waiting in a module slot:
+		// an unrelated Markdown on its own `---` has to stay plain.
+		assert.deepEqual(owner.renderToken?.({ type: "html", raw: marker } as Token, 60), []);
+		assert.deepEqual(rule(stranger, 20), ["<dim>────────────────────</dim>"]);
+		// The owner still gets its own numbers when its own rule follows.
+		assert.ok(rule(owner, 60)[0]?.includes(labelFor(theme)));
+	} finally {
+		cleanup?.();
+	}
+});
+
+test("with dividers off a marker that looks like ours is left to Pi", () => {
+	const cleanup = startSkin();
+	try {
+		current = config({ dividers: "none" });
+		const instance = markdownInstance();
+		const raw = `<!--pi-turn:${payloadOf(TURN)}-->`;
+		// Off-path byte identity: with dividers off we do not own the channel, so Pi renders the html.
+		assert.deepEqual(instance.renderToken?.({ type: "html", raw } as Token, 60), [raw]);
+		// ... and swallowing it must not leave a label behind for the next rule either.
+		current = config({ dividers: "line" });
+		assert.deepEqual(rule(instance, 20), ["<dim>────────────────────</dim>"]);
+	} finally {
+		cleanup?.();
+		current = config();
+	}
+});
+
+test("a marker payload with an embedded newline still renders one padded row", () => {
+	const cleanup = startSkin();
+	try {
+		const instance = markdownInstance();
+		// The marker is unvalidated text: a newline in it would break the rule into two unpadded rows.
+		const payload = payloadOf(TURN).replace("{", "{\r\n");
+		instance.renderToken?.({ type: "html", raw: `<!--pi-turn:${payload}-->` } as Token, 60);
+		const rows = rule(instance, 60);
+		assert.equal(rows.length, 1);
+		assert.ok(!rows[0]?.includes("\n"), rows[0]);
+		assert.ok(rows[0]?.includes(labelFor(theme)), rows[0]);
+	} finally {
+		cleanup?.();
+	}
+});
+
+test("the label cache is bounded so replayed history cannot grow it without end", () => {
+	const cleanup = startSkin();
+	try {
+		markSkinScope("first", context());
+		// More distinct messages than the 256-entry cap: each carries a full payload.
+		for (let index = 0; index < 600; index++) {
+			pending = payloadOf(TURN);
+			markSkinScope(`message ${index}`, context());
+		}
+		// The oldest label aged out, so that message renders bare instead of showing a stale one.
+		assert.equal(markSkinScope("message 0", context()), "---\n\nmessage 0");
+		// The newest one is still cached: a repaint keeps its own numbers.
+		assert.ok(markSkinScope("message 599", context()).startsWith("<!--pi-turn:"));
+	} finally {
+		cleanup?.();
+	}
+});
+
+test("a user message with its own --- shows the label twice (known limitation)", () => {
+	initTheme();
+	const cleanup = startSkin();
+	try {
+		assert.equal(markSkinScope("first", context()), "first");
+		pending = payloadOf(TURN);
+		const source = markSkinScope("before\n\n---\n\nafter", context());
+		// Pi's block cache is keyed on `token.raw`, so the `---` we prepend and the user's own `---`
+		// share one decorated block and both rows get the label. Not fixable from a transformer.
+		const rows = new Markdown(source, 0, 0, markdownTheme).render(120);
+		assert.equal(rows.filter((line) => line.includes(labelFor(theme))).length, 2);
+	} finally {
+		cleanup?.();
 	}
 });

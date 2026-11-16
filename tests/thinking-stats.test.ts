@@ -16,6 +16,10 @@ import {
 	resetMarkdownSkinSession,
 } from "../extensions/open-tui/markdown-skin.ts";
 import type { ThemeConfig } from "../extensions/open-tui/theme.ts";
+import { createPainter } from "../extensions/open-tui/theme.ts";
+import { DEFAULT_CONFIG } from "../extensions/open-tui/config.ts";
+import { DEFAULT_COST } from "../extensions/open-tui/currency.ts";
+import { formatTurnTelemetry, type TurnTelemetry } from "../extensions/open-tui/telemetry.ts";
 
 const theme = {
 	fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
@@ -208,19 +212,53 @@ const rule = (instance: typeof markdownProto, width: number, nextType?: string):
 	instance.renderToken?.({ type: "hr", raw: "---" } as Token, width, nextType) ?? [];
 
 let current: ThemeConfig = config();
+/**
+ * The turn summary `agent_settled` leaves for the next divider: the plain numbers, no colour. The
+ * label itself is formatted per render, so a theme switch repaints it.
+ */
 let pending: string | undefined;
+/** The theme the skin reads at render time; a theme switch is just a new value here. */
+let activeTheme: Theme = theme;
+const TURN: TurnTelemetry = {
+	tps: 42.5,
+	ttftMs: 1_200,
+	totalMs: 29_700,
+	inputTokens: 567,
+	outputTokens: 1_200,
+	cacheReadTokens: 0,
+	stallMs: 0,
+	stallCount: 0,
+	rateUsdPerMTokens: null,
+	generationMs: 28_000,
+	totalTokens: 1_767,
+	costUsd: 0.01,
+	measurementMs: 28_000,
+};
+/** Duration and tokens only: short enough for a 40-column rule. */
+const TURN_CONFIG = { ...DEFAULT_CONFIG.telemetry, tps: false, ttft: false, stalls: false, cost: false };
+
+let settings = { config: TURN_CONFIG, iconMode: "unicode" as const, cost: DEFAULT_COST };
+
+/** What the marker carries: the numbers, serialised. */
+const payloadOf = (telemetry: TurnTelemetry): string => JSON.stringify(telemetry);
+
+const labelFor = (themeUsed: Theme = theme, cfg = TURN_CONFIG): string =>
+	formatTurnTelemetry(TURN, themeUsed, cfg, "unicode", DEFAULT_COST, createPainter(themeUsed, current));
 
 const startSkin = () => {
 	resetMarkdownSkinSession();
 	pending = undefined;
+	activeTheme = theme;
+	settings = { config: TURN_CONFIG, iconMode: "unicode", cost: DEFAULT_COST };
 	return installMarkdownSkin({
-		theme: () => theme,
+		theme: () => activeTheme,
 		config: () => current,
 		consumeTurnSummary: () => {
 			const next = pending;
 			pending = undefined;
 			return next;
 		},
+		telemetrySettings: () => settings,
 	});
 };
 
@@ -239,13 +277,14 @@ test("T5b.1 the next user divider carries the settled turn metrics", () => {
 	const cleanup = startSkin();
 	try {
 		assert.equal(markSkinScope("first", userContext), "first");
-		pending = "12.3s · 4.5k tok";
+		pending = payloadOf(TURN);
 		const source = markSkinScope("second", userContext);
-		assert.ok(source.includes("12.3s · 4.5k tok"), source);
+		// The marker carries the numbers, not a pre-coloured label: the colour is chosen at render.
+		assert.ok(source.startsWith("<!--pi-turn:{"), source);
 		assert.ok(source.endsWith("second"), source);
-		const instance = markdownInstance();
-		const [row] = divide(instance, source, 40);
-		assert.equal(row, "<dim>──────────┤ </dim>12.3s · 4.5k tok<dim> ├──────────</dim>");
+		const [row] = divide(markdownInstance(), source, 40);
+		assert.ok(row?.includes(labelFor(theme)), row);
+		assert.ok(row?.includes("29.7s"), row);
 	} finally {
 		cleanup?.();
 	}
@@ -255,8 +294,8 @@ test("T5b.2 the summary is consumed once: the following message keeps a bare div
 	const cleanup = startSkin();
 	try {
 		markSkinScope("first", userContext);
-		pending = "12.3s · 4.5k tok";
-		assert.ok(markSkinScope("second", userContext).includes("12.3s"));
+		pending = payloadOf(TURN);
+		assert.ok(markSkinScope("second", userContext).includes("29.7"));
 		// A second message without a new settle gets the plain divider source, byte for byte.
 		assert.equal(markSkinScope("third", userContext), "---\n\nthird");
 		assert.equal(markSkinScope("fourth", userContext), "---\n\nfourth");
@@ -307,15 +346,51 @@ test("a decorated divider survives a re-render at another width", () => {
 	const cleanup = startSkin();
 	try {
 		markSkinScope("first", userContext);
-		pending = "12.3s · 4.5k tok";
+		pending = payloadOf(TURN);
 		const first = markSkinScope("second", userContext);
 		// Resize/theme switch re-renders from the same source text: the label must not vanish
 		// because the one-shot summary was already consumed by the first render.
 		assert.equal(markSkinScope("second", userContext), first);
 		const instance = markdownInstance();
-		assert.equal(divide(instance, first, 40)[0], "<dim>──────────┤ </dim>12.3s · 4.5k tok<dim> ├──────────</dim>");
+		const [narrow] = divide(instance, first, 40);
+		assert.ok(narrow?.includes(labelFor(theme)), narrow);
 		const [wide] = divide(instance, first, 60);
-		assert.ok(wide?.includes("12.3s · 4.5k tok"));
+		assert.ok(wide?.includes(labelFor(theme)));
+	} finally {
+		cleanup?.();
+	}
+});
+
+test("a theme switch repaints the label instead of keeping the settle-time colours", () => {
+	const warm = {
+		fg: (color: string, text: string) => `<warm:${color}>${text}</warm:${color}>`,
+		bg: (color: string, text: string) => `<bg:${color}>${text}</bg:${color}>`,
+		bold: (text: string) => `<b>${text}</b>`,
+		style: (text: string) => `<styled>${text}</styled>`,
+	} as unknown as Theme;
+	const cleanup = startSkin();
+	try {
+		markSkinScope("first", userContext);
+		pending = payloadOf(TURN);
+		const source = markSkinScope("second", userContext);
+		const instance = markdownInstance();
+		const [cool] = divide(instance, source, 60);
+		activeTheme = warm;
+		const [repainted] = divide(instance, source, 60);
+		assert.ok(cool?.includes(labelFor(theme)), cool);
+		assert.ok(repainted?.includes(labelFor(warm)), repainted);
+		assert.notEqual(cool, repainted);
+	} finally {
+		cleanup?.();
+	}
+});
+
+test("a marker payload that does not parse is treated as absent", () => {
+	const cleanup = startSkin();
+	try {
+		const instance = markdownInstance();
+		instance.renderToken?.({ type: "html", raw: "<!--pi-turn:{not json-->" } as Token, 60);
+		assert.deepEqual(rule(instance, 40), ["<dim>────────────────────────────────────────</dim>"]);
 	} finally {
 		cleanup?.();
 	}
@@ -324,13 +399,16 @@ test("a decorated divider survives a re-render at another width", () => {
 test("a label wider than the rule is clipped, and a rule too narrow drops it", () => {
 	const cleanup = startSkin();
 	try {
+		// The full palette of numbers: long enough that a 20-column rule cannot hold it.
+		settings = { config: DEFAULT_CONFIG.telemetry, iconMode: "unicode", cost: DEFAULT_COST };
 		markSkinScope("first", userContext);
-		pending = "a very long turn summary that cannot fit into the rule";
+		pending = payloadOf(TURN);
 		const source = markSkinScope("second", userContext);
 		const instance = markdownInstance();
+		const label = labelFor(theme, DEFAULT_CONFIG.telemetry);
 		const [narrow] = divide(instance, source, 20);
 		assert.ok(narrow !== undefined);
-		assert.ok(!narrow.includes("cannot fit"), narrow);
+		assert.ok(!narrow.includes(label), narrow);
 		const [tiny] = divide(instance, source, 6);
 		assert.equal(tiny, "<dim>──────</dim>");
 	} finally {
