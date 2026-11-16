@@ -102,6 +102,30 @@ export function formatModelLabel(model: { provider?: string; id?: string } | nul
 	return model.provider ? `${model.provider}/${model.id}` : model.id;
 }
 
+/**
+ * Bounded map: the newest key moves to the end and the oldest is evicted past `cap`. Both the divider
+ * labels (full message text + ANSI) and the thinking counters (one entry per thinking block) are
+ * unbounded in principle, so both go through here.
+ */
+export function lruSet<K, V>(map: Map<K, V>, key: K, value: V, cap: number): void {
+	map.delete(key);
+	map.set(key, value);
+	while (map.size > cap) {
+		const oldest = map.keys().next();
+		if (oldest.done) return;
+		map.delete(oldest.value);
+	}
+}
+
+/** Reads through the same order: a hit becomes the newest entry instead of ageing out next. */
+export function lruGet<K, V>(map: Map<K, V>, key: K): V | undefined {
+	const value = map.get(key);
+	if (value === undefined) return undefined;
+	map.delete(key);
+	map.set(key, value);
+	return value;
+}
+
 export function formatProviderLabel(provider: string | undefined, capitalize: boolean): string {
 	if (!provider) return "Unknown";
 	return capitalize ? provider.charAt(0).toUpperCase() + provider.slice(1) : provider;

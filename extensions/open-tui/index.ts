@@ -19,7 +19,9 @@ import { SessionLifecycle } from "./session-lifecycle.ts";
 import { registerSettingsCommand, settingsCopy } from "./settings-command.ts";
 import { formatTurnTelemetry, TurnTelemetryTracker } from "./telemetry.ts";
 import {
+	createThinkingStatsLedger,
 	createThinkingStatsTransformer,
+	thinkingRunsOf,
 	type ThinkingStatsSnapshot,
 } from "./thinking-stats.ts";
 import { registerToolView } from "./tool-view.ts";
@@ -105,8 +107,11 @@ export default function (pi: ExtensionAPI) {
 	// Session-wide output total when this task started: the header shows the message, not the session.
 	let thinkingTokensBase: number | undefined;
 	// Frozen when the task settles: the peek's live clock is cleared shortly after, but a re-render of
-	// the settled thinking block must still find its counters.
-	let settledThinkingStats: ThinkingStatsSnapshot | undefined;
+	// the settled thinking block must still find its counters. Keyed by the block's own text, because a
+	// single slot painted every historical block with the current turn's numbers.
+	const thinkingStats = createThinkingStatsLedger();
+	// The run the last `message_end` recorded, so `agent_settled` can freeze exactly that one.
+	let lastThinkingRun: string | undefined;
 
 	const getThinkingLevel = () => (sessionLifecycle.isCurrent() ? pi.getThinkingLevel() : "off");
 
@@ -118,8 +123,19 @@ export default function (pi: ExtensionAPI) {
 			tokens: getUsageTotals(lastCtx).output - (thinkingTokensBase ?? 0),
 		};
 	};
-	// Live first: at the settled render the frozen value is still the previous task's.
-	const readThinkingStats = (): ThinkingStatsSnapshot | undefined => liveThinkingStats() ?? settledThinkingStats;
+
+	/**
+	 * Files this message's thinking blocks under their own text. Called at `message_end`, where the
+	 * counters are final and the block is about to be re-rendered with `isStreaming === false`.
+	 */
+	const recordThinkingStats = (message: unknown, stats: ThinkingStatsSnapshot | undefined): boolean => {
+		if (!stats) return false;
+		const runs = thinkingRunsOf(message);
+		if (runs.length === 0) return false;
+		for (const run of runs) thinkingStats.record(run, stats);
+		lastThinkingRun = runs[runs.length - 1];
+		return true;
+	};
 
 	/** Pi decides whether this label is visible; our toggle only controls updates. */
 	const isPeekEnabled = () => sessionLifecycle.isCurrent() && config.enabled && config.thinkingPeek.lines > 0 && active;
@@ -395,7 +411,8 @@ export default function (pi: ExtensionAPI) {
 		sessionLifecycle.start();
 		resetMarkdownSkinSession();
 		pendingTurnSummary = undefined;
-		settledThinkingStats = undefined;
+		thinkingStats.clear();
+		lastThinkingRun = undefined;
 		gitRefresher.reset();
 		lastCtx = ctx;
 		state.workingSince = undefined;
@@ -431,7 +448,7 @@ export default function (pi: ExtensionAPI) {
 		// agent_start also covers custom-message and continuation-triggered tasks
 		// that do not emit a user message_start event.
 		peekTaskEpoch++;
-		// `settledThinkingStats` is deliberately kept: a re-render of the previous block needs it.
+		// The ledger is deliberately kept: a re-render of a previous block needs its own numbers.
 		state.workingSince = Date.now();
 		state.lastDoneIn = undefined;
 		startWorkingTimer();
@@ -517,9 +534,10 @@ export default function (pi: ExtensionAPI) {
 				pendingTurnSummary = message;
 			}
 		}
-		// Freeze the thinking counters before the settle timer clears the live clock below.
+		// Freeze the counters before the settle timer clears the live clock below, and file them under
+		// the block that was actually being written: the ledger, not a single slot.
 		const frozen = liveThinkingStats();
-		if (frozen) settledThinkingStats = frozen;
+		if (frozen && lastThinkingRun !== undefined) thinkingStats.record(lastThinkingRun, frozen);
 		// Only clear the peek label when this task is still the current one.
 		const settleEpoch = peekTaskEpoch;
 		if (peekSettleTimer) clearTimeout(peekSettleTimer);
@@ -543,10 +561,15 @@ export default function (pi: ExtensionAPI) {
 	pi.on("message_end", (event, ctx) => {
 		turnTelemetry.handle(event);
 		if (!sessionLifecycle.isCurrent()) return;
-		if (event.message?.role === "assistant" && peek.phase === "thinking") {
-			// Sub-message finished (answer text or a tool call): freeze the peek line.
-			peek.phase = "done";
-			setPeekLabel(ctx);
+		if (event.message?.role === "assistant") {
+			// File the counters under the block's own text and repaint once so the settled numbers show
+			// immediately, whether or not Pi re-renders the block before this handler runs.
+			if (recordThinkingStats(event.message, liveThinkingStats())) repaint();
+			if (peek.phase === "thinking") {
+				// Sub-message finished (answer text or a tool call): freeze the peek line.
+				peek.phase = "done";
+				setPeekLabel(ctx);
+			}
 		}
 		invalidateUsageCache();
 		refreshInteractiveState(ctx);
@@ -591,7 +614,7 @@ export default function (pi: ExtensionAPI) {
 	// The visible thinking block is Pi's Markdown, so its counters are appended there; the hidden label
 	// keeps going through `editor.setLatestHiddenThinkingLabel`. Exactly one of the two is live at a time.
 	pi.registerMarkdownTransformer(createThinkingStatsTransformer({
-		stats: readThinkingStats,
+		lookup: thinkingStats.lookup,
 		showCounts: () => config.thinkingPeek.showCounts,
 		dim: (text) => (lastCtx && isTuiContext(lastCtx) ? lastCtx.ui.theme.fg("dim", text) : text),
 	}));

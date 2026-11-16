@@ -58,7 +58,7 @@ export interface MarkdownSkinSource {
 let source: MarkdownSkinSource | undefined;
 /**
  * The first user message of a session stays unruled; keyed by source text because the transform gets no
- * message identity. A repeated identical prompt reuses the exemption — the price of stable re-renders.
+ * message identity. A later message with the same text is a message like any other — see `markSkinScope`.
  */
 let firstUserText: string | undefined;
 /**
@@ -83,12 +83,16 @@ export function resetMarkdownSkinSession(): void {
  */
 export function markSkinScope(markdown: string, context: MarkdownTransformContext): string {
 	if (!source || context.messageType !== "user" || source.config().dividers === "none") return markdown;
-	if (firstUserText === undefined) {
-		firstUserText = markdown;
-		return markdown;
-	}
-	if (markdown === firstUserText) return markdown;
-	return dividerSource(markdown);
+	// Consume up front: a summary that finds no divider here must never stay pending for an unrelated
+	// later message.
+	const consumed = source.consumeTurnSummary?.();
+	const first = firstUserText === undefined;
+	if (first) firstUserText = markdown;
+	// The ruling exception is one message wide. Re-rendering the first message (resize, theme switch)
+	// passes the same text with no summary, which is the only signal a stateless transform has; a new
+	// prompt that repeats the first text carries its own summary and is ruled like any other message.
+	if (markdown === firstUserText && consumed === undefined) return markdown;
+	return dividerSource(markdown, consumed);
 }
 
 /**
@@ -105,12 +109,13 @@ function decorateRule(paint: (text: string) => string, glyph: string, total: num
 }
 
 /** Prepends the divider, carrying this message's turn metrics when it has any. */
-function dividerSource(markdown: string): string {
-	renderedDividerLabel = undefined;
-	const consumed = dividerLabels.get(markdown) ?? source?.consumeTurnSummary?.();
-	if (consumed === undefined) return `${DIVIDER_TEXT}\n\n${markdown}`;
-	dividerLabels.set(markdown, consumed);
-	return `${TURN_MARKER_OPEN}${consumed}${TURN_MARKER_CLOSE}\n\n${DIVIDER_TEXT}\n\n${markdown}`;
+function dividerSource(markdown: string, consumed: string | undefined): string {
+	// A cache hit is still overwritten by the current summary: the numbers on screen must describe the
+	// turn that just finished, and the summary must never be left unconsumed.
+	const label = consumed ?? dividerLabels.get(markdown);
+	if (label === undefined) return `${DIVIDER_TEXT}\n\n${markdown}`;
+	dividerLabels.set(markdown, label);
+	return `${TURN_MARKER_OPEN}${label}${TURN_MARKER_CLOSE}\n\n${DIVIDER_TEXT}\n\n${markdown}`;
 }
 
 /**
