@@ -48,6 +48,11 @@ const REAL_SITES = [
 	'    const costStr = cost > 0 ? ` ($${cost.toFixed(4)})` : "";',
 ];
 
+/** Marker occurrences, counted literally: PATCH_MARKER carries regex metacharacters. */
+function markerCount(source: string): number {
+	return source.split(PATCH_MARKER).length - 1;
+}
+
 function siteFixture(): string {
 	return ["// fixture", ...REAL_SITES, ""].join("\n");
 }
@@ -74,7 +79,7 @@ test("the patch covers the nine real hardcoded sites", () => {
 	assert.ok(code.includes("__potCostFormat(usage.cost.total)"), "the `usage.cost.total` site was not rewritten");
 	assert.ok(code.includes("__potCostFormat(cost)"), "the bare `cost` site was not rewritten");
 	assert.ok(code.includes("__potCostFormat(c.total)"), "the `c.total` site was not rewritten");
-	assert.equal(code.match(new RegExp(PATCH_MARKER, "g"))?.length, 1, "the marker must be prepended once");
+	assert.equal(markerCount(code), 1, "the marker must be prepended once");
 });
 
 test("the regex matches each site and nothing else", () => {
@@ -125,7 +130,7 @@ test("patching is idempotent", () => {
 	const twice = patchSource(once.code);
 	assert.equal(twice.changed, false, "a second run must not touch an already patched file");
 	assert.equal(twice.code, once.code);
-	assert.equal(twice.code.match(new RegExp(PATCH_MARKER, "g"))?.length, 1, "the marker must stay single");
+	assert.equal(markerCount(twice.code), 1, "the marker must stay single");
 });
 
 test("a source without sites reports that instead of a rewrite", () => {
@@ -148,7 +153,19 @@ test("unmet targets are detectable by file and line", () => {
 });
 
 test("the injected prefix runs as written, reading the real config file", () => {
-	const patched = patchSource(siteFixture()).code;
+	// A self-contained fixture instead of the nine-site one: the real sites are duplicated `const
+	// costStr` declarations in different function scopes, which cannot be evaluated in one body.
+	// Wrapping them in functions keeps them unevaluated until the test calls them.
+	const source = [
+		"function renderCostLine(u, parts) {",
+		"  if (u.cost) parts.push(`$${u.cost.toFixed(4)}`);",
+		"}",
+		"function renderTotal(totalCost, parts) {",
+		"  if (totalCost.costUsd) parts.push(`$${totalCost.costUsd.toFixed(4)}`);",
+		"}",
+		"",
+	].join("\n");
+	const patched = patchSource(source).code;
 	// The prefix is prepended above the file's own imports, so strip the import lines to evaluate the
 	// remaining body in this scope with the same `__potFs/__potOs/__potPath` bindings.
 	const body = patched
@@ -159,16 +176,18 @@ test("the injected prefix runs as written, reading the real config file", () => 
 		"__potFs",
 		"__potOs",
 		"__potPath",
-		"__POT_COST_DEFAULTS",
-		`${body}\nreturn __potCostFormat;`,
-	) as (...args: unknown[]) => (usdAmount: number) => string;
+		`${body}\nreturn { format: __potCostFormat, renderCostLine };`,
+	) as (...args: unknown[]) => {
+		format: (usdAmount: number) => string;
+		renderCostLine: (usage: { cost: number }, parts: string[]) => void;
+	};
 
 	const directory = mkdtempSync(join(os.tmpdir(), "pi-open-tui-patch-"));
 	const configPath = join(directory, "open-tui.json");
 	const previous = process.env.PI_OPEN_TUI_CONFIG;
 	try {
 		process.env.PI_OPEN_TUI_CONFIG = configPath;
-		const format = evaluate(fs, os, nodePath, COST_DEFAULTS);
+		const { format, renderCostLine } = evaluate(fs, os, nodePath);
 
 		// A missing config must not throw and must render dollars.
 		assert.equal(format(0.0004), "$0.0004");
@@ -176,6 +195,11 @@ test("the injected prefix runs as written, reading the real config file", () => 
 		writeFileSync(configPath, JSON.stringify({ cost: { currency: "cny", usdToCny: 7.15 } }), "utf8");
 		assert.equal(format(1.366), "¥9.7669");
 		assert.equal(format(0.0004), "¥0.0029");
+
+		// The rewritten call site, not just the helper: this is the string pi-subagents would print.
+		const parts: string[] = [];
+		renderCostLine({ cost: 1.366 }, parts);
+		assert.deepEqual(parts, ["¥9.7669"]);
 
 		// An unparsable config is treated as defaults rather than breaking the host package's render.
 		writeFileSync(configPath, "{ not json", "utf8");

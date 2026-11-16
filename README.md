@@ -169,6 +169,10 @@ TPS measures provider-reported output tokens over generation time, including wai
 
 Toggle notification fields under **Telemetry → Measurements**, or live speed under **Footer → Runtime → Live TPS**. See [measurement definitions](./docs/implementation.md#usage-and-telemetry) for formulas, timing boundaries, and cache accounting.
 
+### Third-party cost readouts
+
+The subagent and delegate cost lines printed by `pi-subagents` and `billion-context-pi` are formatted by those packages, which hardcode the dollar sign and read no configuration at all, so a patch of the files Pi loads is the only way to make them follow `cost.currency`. Run `npm run patch:cost` (add `--check` to verify only, `--dry-run` to preview, `--revert` to restore from the `.pi-open-tui.bak` files, `--root <dir>` when the packages live outside Pi's agent directory). It rewrites the nine `$${…toFixed(4)}` sites and keeps their four decimals, so with `currency: "cny"` at 7.15 a readout of `$1.3660` becomes `¥9.7669`. **Re-run it after upgrading either package**: the bundles are replaced wholesale, and an upgraded chunk would otherwise quietly print dollars again (`--check` exits 1 while that is the case).
+
 ### Known limitations
 
 The divider that opens each turn carries that turn's numbers. They travel to the rule inside a hidden marker and are formatted when the rule is drawn, so a theme switch recolours the label together with the rest of the transcript.

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Add `npm run patch:cost` (`scripts/patch-cost-display.mjs`), which makes the subagent and delegate cost readouts follow `cost.currency`. `pi-subagents` and `billion-context-pi` format those nine lines themselves, hardcode the dollar sign, and read no configuration, so patching the files Pi loads is the only way to reach them. The injected formatter keeps the four decimals, reads `open-tui.json` through the same rate window as the footer, and needs no import from this package, so `$1.3660` becomes `¥9.7669`. `--check`, `--dry-run`, and `--revert` cover verification and rollback; re-run it after upgrading either package.
+
 ## [0.5.0] - 2026-11-15
 
 ### Added
