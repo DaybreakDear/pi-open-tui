@@ -44,6 +44,11 @@ function isTuiContext(ctx: ExtensionContext): boolean {
 	return ctx.hasUI && ctx.mode === "tui";
 }
 
+/** Compares the whole theme subtree: every field under it reaches the painter. */
+function themeBlockChanged(previous: OpenTuiConfig["theme"], next: OpenTuiConfig["theme"]): boolean {
+	return JSON.stringify(previous) !== JSON.stringify(next);
+}
+
 export default function (pi: ExtensionAPI) {
 	const sessionLifecycle = new SessionLifecycle();
 	const state: FooterState = createInitialState();
@@ -528,6 +533,15 @@ export default function (pi: ExtensionAPI) {
 	pi.registerMarkdownTransformer(markSkinScope);
 	pi.registerMarkdownTransformer(markCopyScope);
 
+	// `requestRender` alone redraws the same bytes: Pi caches rendered lines per (text, width),
+	// so a colour change needs `invalidate` first. No editor means no mounted TUI to repaint.
+	const repaint = (): void => {
+		const tui = editor?.getTui();
+		if (!tui) return;
+		tui.invalidate();
+		tui.requestRender(true);
+	};
+
 	// Save first so the in-memory config and the session agree only after the write.
 	const persistConfig = (nextConfig: OpenTuiConfig): void => {
 		if (!saveConfig(nextConfig)) {
@@ -535,8 +549,12 @@ export default function (pi: ExtensionAPI) {
 				? "open-tui 设置本次生效，但未保存到磁盘。请检查配置目录权限和可用空间。"
 				: "open-tui settings apply for this session but could not be saved. Check configuration directory permissions and free space.", "warning");
 		}
-		// The painter only reads the theme block: an icon or cost change must not bust the row cache.
-		if (nextConfig.theme !== config.theme) skinEpoch += 1;
+		// Every visual field (preset, slots, dividers, gutter, banding, userBar) lives under `theme`,
+		// so compare the whole block: identity would miss a caller that reuses the old object.
+		if (themeBlockChanged(config.theme, nextConfig.theme)) {
+			skinEpoch += 1;
+			repaint();
+		}
 		config = nextConfig;
 	};
 
