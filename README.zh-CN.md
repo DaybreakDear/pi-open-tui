@@ -89,7 +89,7 @@ Pi 主题只改造 Pi 本身。open-tui 另用十三个槽位给自己的区域�
 | `preset` | `"tokyo-night"` | `tokyo-night`、`catppuccin-mocha`、`gruvbox-dark`、`rose-pine-moon`，或 `pi` 表示改用 Pi 自己的 token |
 | `slots` | `{}` | 按槽位覆盖颜色，槽位见下表 |
 | `dividers` | `"line"` | `line`、`dashed` 或 `none`。轮次之间画分隔线，也用于底栏分隔符 |
-| `gutter` | `true` | 命令输出左侧的竖线 |
+| `gutter` | `true` | 命令输出左侧的竖线。只有 `toolView.mode` 为 `compact` 时才会画出 |
 | `banding` | `false` | 交替的工具行使用淡背景 |
 | `userBar` | `true` | 用户消息左侧的彩色竖条 |
 | `expandHint` | `"plain"` | 设为 `key` 会给展开提示里的 `ctrl+o` 键幅加下划线 |

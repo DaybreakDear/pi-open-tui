@@ -105,7 +105,7 @@ Pi themes restyle Pi; these options restyle open-tui's own surfaces. `preset` se
 | `theme.preset` | `"tokyo-night"` | `tokyo-night`, `catppuccin-mocha`, `gruvbox-dark`, `rose-pine-moon`, or `pi` to paint Pi's own tokens |
 | `theme.slots` | `{}` | Per-slot overrides. The thirteen slots, their target, and the Pi token each falls back to are in the [README slot table](../README.md#open-tui-colours) |
 | `theme.dividers` | `"line"` | `line`, `dashed`, or `none`. Rules between turns; the same slot colours footer separators |
-| `theme.gutter` | `true` | Vertical rail beside command output |
+| `theme.gutter` | `true` | Vertical rail beside command output. Drawn only in the compact tool view (`toolView.mode: "compact"`) |
 | `theme.banding` | `false` | Faint background on alternating tool rows |
 | `theme.userBar` | `true` | Coloured rail beside user messages |
 | `theme.expandHint` | `"plain"` | `key` underlines the `ctrl+o` keycap in expand hints; `plain` keeps the 0.4.x rendering |
@@ -238,7 +238,7 @@ Pi 主题负责 Pi 本身；下列选项负责 open-tui 自己的区域。`prese
 | `theme.preset` | `"tokyo-night"` | `tokyo-night`、`catppuccin-mocha`、`gruvbox-dark`、`rose-pine-moon`，或 `pi` 表示使用 Pi 自己的 token |
 | `theme.slots` | `{}` | 按槽位覆盖颜色。十三个槽位、各自绘制对象及回退的 Pi token 见 [README 槽位表](../README.zh-CN.md#open-tui-自有配色) |
 | `theme.dividers` | `"line"` | `line`、`dashed` 或 `none`。轮次之间的分隔线；同一槽位也用于底栏分隔符 |
-| `theme.gutter` | `true` | 命令输出左侧的竖线 |
+| `theme.gutter` | `true` | 命令输出左侧的竖线。只在紧凑工具视图（`toolView.mode: "compact"`）下才画出 |
 | `theme.banding` | `false` | 交替的工具行使用淡背景 |
 | `theme.userBar` | `true` | 用户消息左侧的彩色竖条 |
 | `theme.expandHint` | `"plain"` | 设为 `key` 会给展开提示里的 `ctrl+o` 键幅加下划线；`plain` 保持 0.4.x 的渲染 |

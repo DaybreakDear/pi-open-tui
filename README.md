@@ -89,7 +89,7 @@ A Pi theme restyles Pi. open-tui additionally paints its own surfaces through th
 | `preset` | `"tokyo-night"` | `tokyo-night`, `catppuccin-mocha`, `gruvbox-dark`, `rose-pine-moon`, or `pi` for Pi's own tokens |
 | `slots` | `{}` | Per-slot colour overrides; see the slot table below |
 | `dividers` | `"line"` | `line`, `dashed`, or `none`. Draws a rule between turns and colours footer separators |
-| `gutter` | `true` | A vertical rail beside command output |
+| `gutter` | `true` | A vertical rail beside command output. Only drawn when `toolView.mode` is `compact` |
 | `banding` | `false` | Alternate tool rows get a faint background |
 | `userBar` | `true` | A coloured rail beside user messages |
 | `expandHint` | `"plain"` | `key` underlines the `ctrl+o` keycap in expand hints |

@@ -57,6 +57,9 @@ const COPY = {
 			theme: "Theme",
 		},
 		hint: "Tab/Shift+Tab/←/→: tabs · ↑/↓: move · Enter/Space: change · Esc/q: close",
+		hints: {
+			gutterNeedsCompact: "(needs compact)",
+		},
 		labels: {
 			enabled: "Enabled",
 			header: "Override header",
@@ -133,6 +136,9 @@ const COPY = {
 			theme: "主题",
 		},
 		hint: "Tab/Shift+Tab/←/→：切页 · ↑/↓：移动 · Enter/Space：更改 · Esc/q：关闭",
+		hints: {
+			gutterNeedsCompact: "(需 compact)",
+		},
 		labels: {
 			enabled: "启用",
 			header: "覆盖顶部信息栏",
@@ -311,6 +317,9 @@ function cycleDividers(config: OpenTuiConfig): OpenTuiConfig {
 
 function buildIconsItems(config: OpenTuiConfig, copy: SettingsCopy): SettingGroup[] {
 	const flag = (value: boolean) => value ? copy.values.on : copy.values.off;
+	// Only the compact tool renderer paints the gutter (tool-view.ts), so an enabled gutter in
+	// native mode does nothing visible; the row says so instead of silently changing nothing.
+	const gutterNeedsCompact = config.toolView.mode !== "compact" && config.theme.gutter;
 	return [
 		{
 			label: copy.sections.icons,
@@ -330,7 +339,7 @@ function buildIconsItems(config: OpenTuiConfig, copy: SettingsCopy): SettingGrou
 			items: [
 				{ id: "themePreset", label: copy.labels.themePreset, currentValue: PRESET_LABELS[config.theme.preset] },
 				{ id: "dividers", label: copy.labels.dividers, currentValue: copy.values.dividers[config.theme.dividers] },
-				{ id: "themeGutter", label: copy.labels.gutter, currentValue: flag(config.theme.gutter) },
+				{ id: "themeGutter", label: gutterNeedsCompact ? `${copy.labels.gutter} ${copy.hints.gutterNeedsCompact}` : copy.labels.gutter, currentValue: flag(config.theme.gutter) },
 				{ id: "themeBanding", label: copy.labels.banding, currentValue: flag(config.theme.banding) },
 				{ id: "themeUserBar", label: copy.labels.userBar, currentValue: flag(config.theme.userBar) },
 			],
