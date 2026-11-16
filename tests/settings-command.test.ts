@@ -99,6 +99,13 @@ function selectedLine(component: SettingsComponent, width = 80): string {
 	return component.render(width).find((line) => line.includes("→ ")) ?? "";
 }
 
+/** The rendered row whose label matches `label`, whether or not it is the selected one. */
+function rowLine(component: SettingsComponent, label: RegExp, width = 80): string {
+	const line = component.render(width).find((candidate) => label.test(candidate));
+	assert.ok(line, `no settings row matching ${label}`);
+	return line;
+}
+
 // Configuration persistence.
 test("reports whether configuration was saved", (t) => {
 	const agentDir = temporaryDirectory(t, "open-tui-save-");
@@ -739,4 +746,34 @@ test("ctrl+shift+m is inert when switching is disabled", (t) => {
 	assert.equal(host.notifications.length, 1);
 	assert.equal(host.notifications[0]?.level, "info");
 	assert.match(host.notifications[0]?.message ?? "", /disabled/i);
+});
+
+// The gutter is painted by the compact tool renderer only, so a native setting that looks
+// enabled has to say why nothing changed on screen.
+test("says the tool gutter needs the compact tool view", async () => {
+	for (const [language, hint] of [["en", "(needs compact)"], ["zh", "(需 compact)"]] as const) {
+		const config = structuredClone(DEFAULT_CONFIG);
+		config.settingsLanguage = language;
+		config.toolView.mode = "native";
+		config.theme.gutter = true;
+		const settings = await openSettings(config);
+		settings.component.handleInput("\t");
+
+		const line = rowLine(settings.component, /Tool gutter|工具竖线/);
+		assert.ok(line.includes(hint), `${language}: ${line}`);
+		settings.component.handleInput("q");
+	}
+});
+
+test("the tool gutter hint disappears in the compact tool view", async () => {
+	const config = structuredClone(DEFAULT_CONFIG);
+	config.toolView.mode = "compact";
+	config.theme.gutter = true;
+	const settings = await openSettings(config);
+	settings.component.handleInput("\t");
+
+	const line = rowLine(settings.component, /Tool gutter/);
+	assert.doesNotMatch(line, /needs compact|需 compact/);
+	assert.match(line, /Tool gutter.*On/);
+	settings.component.handleInput("q");
 });
