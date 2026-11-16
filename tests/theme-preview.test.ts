@@ -5,6 +5,7 @@ import { createEventBus, type ExtensionAPI, type ExtensionContext, type Theme } 
 import { parseColor, type Component, type KeybindingsManager, type TUI } from "@earendil-works/pi-tui";
 import { DEFAULT_CONFIG, getConfigPath, loadConfig, saveConfig, type OpenTuiConfig } from "../extensions/open-tui/config.ts";
 import openTui from "../extensions/open-tui/index.ts";
+import { registerSettingsCommand } from "../extensions/open-tui/settings-command.ts";
 import { PRESET_LABELS, ThemePreviewPage, appliedConfig, previewConfig } from "../extensions/open-tui/theme-preview.ts";
 import { PRESET_SLOTS, THEME_PRESETS, type ThemeConfig } from "../extensions/open-tui/theme.ts";
 import { preserveEnvironment, temporaryDirectory } from "./fixtures/test-helpers.ts";
@@ -166,6 +167,7 @@ test("Esc reverts to exactly the configuration captured on entry", (t) => {
 		userBar: captured.theme.userBar,
 		bubble: captured.theme.bubble,
 		timestamps: captured.theme.timestamps,
+		expandHint: captured.theme.expandHint,
 	});
 	assert.deepEqual(loadConfig().theme, captured.theme, "the file still holds the entry state");
 });
@@ -231,14 +233,25 @@ test("reverting twice, and reverting after the page settled, are no-ops", (t) =>
  * Boots the real extension so a keypress travels the production path: settings row → sub-page →
  * in-memory config → `repaint()`. Nothing here may reach `ctx.ui.setTheme`.
  */
-function overlayHarness(t: TestContext): {
+function overlayHarness(
+	t: TestContext,
+	initialTheme: Partial<ThemeConfig> = {},
+): {
 	open: () => SettingsComponent;
+	/** What was on disk before the overlay opened: the page must capture exactly this. */
+	opened: OpenTuiConfig;
 	counts: { invalidate: number; forced: number; setTheme: number };
 	fire: (event: string) => void;
 } {
 	const agentDir = temporaryDirectory(t, "open-tui-preview-overlay-");
 	preserveEnvironment(t, ["PI_CODING_AGENT_DIR"]);
 	process.env.PI_CODING_AGENT_DIR = agentDir;
+
+	// The extension reads the file once, at `session_start`, so the state under test has to be on
+	// disk before the handlers are wired; writing it afterwards would only touch a dead snapshot.
+	const opened = structuredClone(DEFAULT_CONFIG);
+	opened.theme = { ...opened.theme, ...initialTheme };
+	assert.equal(saveConfig(opened), true);
 
 	const counts = { invalidate: 0, forced: 0, setTheme: 0 };
 	const tui = {
@@ -312,6 +325,7 @@ function overlayHarness(t: TestContext): {
 	void handlers.get("session_start")?.({ type: "session_start" }, ctx);
 
 	return {
+		opened,
 		open() {
 			void command?.("", ctx);
 			assert.ok(settings, "the settings overlay must be built");
@@ -323,6 +337,68 @@ function overlayHarness(t: TestContext): {
 		},
 	};
 }
+
+/**
+ * The overlay as `registerSettingsCommand` builds it on `DEFAULT_CONFIG` at 80×24 — the shape the
+ * f23a62a baseline was captured in. `DEFAULT_CONFIG` is what `loadConfig()` returns without a file.
+ */
+function settingsOnlyHarness(): SettingsComponent {
+	let handler: ((args: string, ctx: ExtensionContext) => Promise<void> | void) | undefined;
+	let component: SettingsComponent | undefined;
+	const pi = {
+		registerCommand(_name: string, registered: { handler?: typeof handler }) {
+			handler = registered.handler;
+		},
+	} as unknown as ExtensionAPI;
+	registerSettingsCommand(pi, {
+		getConfig: () => structuredClone(DEFAULT_CONFIG),
+		onConfigChanged: () => {},
+		onOverlayClosed: () => {},
+	});
+	const terminal = { columns: 80, rows: 24 };
+	const tui = { terminal, requestRender() {} } as unknown as TUI;
+	const ctx = {
+		hasUI: true,
+		mode: "tui",
+		ui: {
+			custom: (factory: (t: TUI, th: Theme, kb: KeybindingsManager, done: (value: void) => void) => Component) => {
+				component = factory(tui, theme, {} as KeybindingsManager, () => {}) as SettingsComponent;
+				return new Promise<void>(() => {});
+			},
+		},
+	} as unknown as ExtensionContext;
+	void handler?.("", ctx);
+	assert.ok(component, "the harness must build the overlay");
+	return component;
+}
+
+/**
+ * The off-path guarantee: opening the preview must be the only thing that can change what the
+ * settings overlay looks like. These tabs cannot know the feature exists.
+ */
+test("the settings overlay is byte-identical to f23a62a on every tab the preview does not touch", () => {
+	const baseline = JSON.parse(
+		readFileSync(new URL("./fixtures/settings-render-f23a62a.json", import.meta.url), "utf8"),
+	) as Record<"features" | "icons" | "segments" | "telemetry", string[]>;
+	const settings = settingsOnlyHarness();
+
+	assert.deepEqual(settings.render(80), baseline.features);
+
+	settings.handleInput("\t");
+	const appearance = settings.render(80);
+	const entry = appearance.findIndex((line) => line.includes("Preview themes"));
+	assert.ok(entry > 0, "Appearance must carry the preview entry row");
+	assert.deepEqual(
+		[...appearance.slice(0, entry), ...appearance.slice(entry + 1)],
+		baseline.icons,
+		"Appearance may differ by the entry row and nothing else",
+	);
+
+	settings.handleInput("\t");
+	assert.deepEqual(settings.render(80), baseline.segments);
+	settings.handleInput("\t");
+	assert.deepEqual(settings.render(80), baseline.telemetry);
+});
 
 /** Walks the Appearance page down to the preview entry row and opens the sub-page. */
 function openPreviewPage(html: SettingsComponent): void {
@@ -339,10 +415,7 @@ function selectedLine(component: SettingsComponent, width = 100): string {
 
 // T8.7
 test("previewing and closing leaves the on-disk configuration byte-identical", (t) => {
-	const host = overlayHarness(t);
-	const opened = structuredClone(DEFAULT_CONFIG);
-	opened.theme = { ...opened.theme, preset: "gruvbox-dark" };
-	assert.equal(saveConfig(opened), true);
+	const host = overlayHarness(t, { preset: "gruvbox-dark" });
 	const before = readFileSync(getConfigPath(), "utf8");
 
 	const settings = host.open();
@@ -351,9 +424,11 @@ test("previewing and closing leaves the on-disk configuration byte-identical", (
 	host.counts.invalidate = 0;
 	host.counts.forced = 0;
 	settings.handleInput(RIGHT);
-	settings.handleInput(RIGHT);
 	assert.equal(host.counts.invalidate, 1, "a preview repaints through invalidate()");
 	assert.equal(host.counts.forced, 1);
+	settings.handleInput(RIGHT);
+	assert.equal(host.counts.invalidate, 2, "every step repaints: the transcript shows the new colours");
+	assert.equal(host.counts.forced, 2);
 	assert.equal(host.counts.setTheme, 0, "previewing must never call ctx.ui.setTheme");
 	assert.equal(readFileSync(getConfigPath(), "utf8"), before, "previewing writes nothing");
 
@@ -361,14 +436,11 @@ test("previewing and closing leaves the on-disk configuration byte-identical", (
 	assert.equal(readFileSync(getConfigPath(), "utf8"), before, "reverting writes nothing either");
 	// Back on the Appearance page, with the entry snapshot still on disk.
 	assert.match(settings.render(100).join("\n"), /Theme preset/);
-	assert.deepEqual(loadConfig().theme, opened.theme);
+	assert.deepEqual(loadConfig().theme, host.opened.theme);
 });
 
 test("a preview that is still open at session_shutdown reverts once and never throws", (t) => {
-	const host = overlayHarness(t);
-	const opened = structuredClone(DEFAULT_CONFIG);
-	opened.theme = { ...opened.theme, preset: "tokyo-night" };
-	assert.equal(saveConfig(opened), true);
+	const host = overlayHarness(t, { preset: "tokyo-night" });
 	const before = readFileSync(getConfigPath(), "utf8");
 
 	const settings = host.open();
@@ -380,14 +452,11 @@ test("a preview that is still open at session_shutdown reverts once and never th
 	assert.doesNotThrow(() => settings.handleInput("\x1b"));
 	assert.doesNotThrow(() => settings.handleInput("\x1b"));
 	assert.equal(readFileSync(getConfigPath(), "utf8"), before, "a revert never rewrites the file");
-	assert.deepEqual(loadConfig().theme, opened.theme);
+	assert.deepEqual(loadConfig().theme, host.opened.theme);
 });
 
 test("applying from the preview page persists and keeps the other visual switches", (t) => {
-	const host = overlayHarness(t);
-	const opened = structuredClone(DEFAULT_CONFIG);
-	opened.theme = { ...opened.theme, preset: "tokyo-night", dividers: "dashed", bubble: "off" };
-	assert.equal(saveConfig(opened), true);
+	const host = overlayHarness(t, { preset: "tokyo-night", dividers: "dashed", bubble: "off" });
 
 	const settings = host.open();
 	openPreviewPage(settings);
@@ -398,7 +467,7 @@ test("applying from the preview page persists and keeps the other visual switche
 	assert.equal(saved.preset, "catppuccin-mocha");
 	assert.equal(saved.dividers, "dashed");
 	assert.equal(saved.bubble, "off");
-	assert.equal(saved.timestamps, opened.theme.timestamps);
+	assert.equal(saved.timestamps, host.opened.theme.timestamps);
 	// Applying returns to the settings list rather than closing the overlay.
 	assert.match(settings.render(100).join("\n"), /Theme preset/);
 });

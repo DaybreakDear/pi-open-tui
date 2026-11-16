@@ -16,7 +16,8 @@ import {
 } from "@earendil-works/pi-tui";
 import type { CursorStyle, IconMode, OpenTuiConfig, SettingsLanguage, ThinkingPeekLines } from "./config.ts";
 import { currencySymbol, RATE_STEPS } from "./currency.ts";
-import { BUBBLE_STYLES, DIVIDER_STYLES, THEME_PRESETS, TIMESTAMP_MODES, type ThemePreset } from "./theme.ts";
+import { BUBBLE_STYLES, DIVIDER_STYLES, THEME_PRESETS, TIMESTAMP_MODES } from "./theme.ts";
+import { PRESET_LABELS, ThemePreviewPage } from "./theme-preview.ts";
 
 interface SettingItem {
 	id: string;
@@ -96,6 +97,7 @@ const COPY = {
 			usdToCny: "USD→CNY rate",
 			currencySwitch: "Currency switching (ctrl+shift+m)",
 			themePreset: "Theme preset",
+			themePreview: "Preview themes",
 			dividers: "Dividers",
 			gutter: "Tool gutter",
 			banding: "Row banding",
@@ -112,6 +114,7 @@ const COPY = {
 			cursorStyles: { block: "Block", bar: "Bar", underline: "Underline" },
 			icons: { auto: "Auto", nerd: "Nerd", unicode: "Unicode", ascii: "ASCII" },
 			currencies: { usd: `USD ${currencySymbol("usd")}`, cny: `CNY ${currencySymbol("cny")}` },
+			open: "Open",
 			dividers: { none: "None", line: "Line", dashed: "Dashed" },
 			bubbles: { rounded: "Rounded", off: "Off" },
 			timestamps: { all: "All", assistant: "Assistant", off: "Off" },
@@ -179,6 +182,7 @@ const COPY = {
 			usdToCny: "汇率（USD→CNY）",
 			currencySwitch: "货币切换（ctrl+shift+m）",
 			themePreset: "主题预设",
+			themePreview: "预览主题",
 			dividers: "分割线",
 			gutter: "工具竖线",
 			banding: "行底色",
@@ -195,6 +199,7 @@ const COPY = {
 			cursorStyles: { block: "块", bar: "竖线", underline: "下划线" },
 			icons: { auto: "自动", nerd: "Nerd", unicode: "Unicode", ascii: "ASCII" },
 			currencies: { usd: `美元 ${currencySymbol("usd")}`, cny: `人民币 ${currencySymbol("cny")}` },
+			open: "打开",
 			dividers: { none: "无", line: "实线", dashed: "虚线" },
 			bubbles: { rounded: "圆角", off: "关闭" },
 			timestamps: { all: "全部", assistant: "仅助手", off: "关闭" },
@@ -300,15 +305,6 @@ function nextRateStep(current: number): number {
 	return RATE_STEPS.find((step) => step > current) ?? RATE_STEPS[0];
 }
 
-/** Preset names are proper nouns: they read the same in both settings languages. */
-const PRESET_LABELS: Record<ThemePreset, string> = {
-	pi: "Pi",
-	"tokyo-night": "Tokyo Night",
-	"catppuccin-mocha": "Catppuccin Mocha",
-	"gruvbox-dark": "Gruvbox Dark",
-	"rose-pine-moon": "Rosé Pine Moon",
-};
-
 function cycleThemePreset(config: OpenTuiConfig): OpenTuiConfig {
 	const currentIdx = THEME_PRESETS.indexOf(config.theme.preset);
 	const next = THEME_PRESETS[(currentIdx + 1) % THEME_PRESETS.length]!;
@@ -356,6 +352,9 @@ function buildIconsItems(config: OpenTuiConfig, copy: SettingsCopy): SettingGrou
 			label: copy.sections.theme,
 			items: [
 				{ id: "themePreset", label: copy.labels.themePreset, currentValue: PRESET_LABELS[config.theme.preset] },
+				// Sits directly under the preset row: the preview is how you pick a preset, the row above is
+				// how you pick it without looking.
+				{ id: "themePreview", label: copy.labels.themePreview, currentValue: copy.values.open },
 				{ id: "dividers", label: copy.labels.dividers, currentValue: copy.values.dividers[config.theme.dividers] },
 				{ id: "themeGutter", label: gutterNeedsCompact ? `${copy.labels.gutter} ${copy.hints.gutterNeedsCompact}` : copy.labels.gutter, currentValue: flag(config.theme.gutter) },
 				{ id: "themeBanding", label: copy.labels.banding, currentValue: flag(config.theme.banding) },
@@ -669,6 +668,9 @@ class SettingsUi implements SettingsUiHandle {
 	private layoutWidth: number | undefined;
 	private layoutRows: number | undefined;
 	private cachedLines: string[] | undefined;
+	/** Non-undefined while the theme preview sub-page replaces the list. */
+	private subPage: ThemePreviewPage | undefined;
+	private readonly preview: PreviewBridge;
 
 	constructor(
 		tui: TUI,
@@ -676,21 +678,54 @@ class SettingsUi implements SettingsUiHandle {
 		config: OpenTuiConfig,
 		onChange: (config: OpenTuiConfig) => void,
 		onClose: () => void,
+		preview: PreviewBridge,
 	) {
 		this.tui = tui;
 		this.theme = theme;
 		this.config = config;
 		this.onChange = onChange;
 		this.onClose = onClose;
+		this.preview = preview;
 		this.container = new Box(1, 1, (s: string) => theme.bg("customMessageBg", s));
 		this.rebuild();
 	}
 
 	private applySetting(itemId: string): void {
 		this.selectedItemByTab[this.tab] = itemId;
+		if (itemId === "themePreview") {
+			this.openPreview();
+			return;
+		}
 		this.config = handleSettingChange(this.tab, itemId, this.config);
 		this.onChange(this.config);
 		this.rebuild(itemId);
+	}
+
+	/**
+	 * Opens the preview with the configuration as it stands *now*: that snapshot is what Esc and
+	 * `session_shutdown` put back, so nothing that happened before the page opened can leak into it.
+	 */
+	private openPreview(): void {
+		this.subPage = new ThemePreviewPage(this.theme, this.config, {
+			// In-memory only: a preview must not write the file, and it must not go through
+			// `ctx.ui.setTheme`, which would stop the theme watcher for the rest of the session.
+			preview: (next) => this.preview.preview(next),
+			revert: (next) => this.preview.preview(next),
+			// Applying uses the writer every `theme.*` row already uses.
+			apply: (next) => {
+				this.config = next;
+				this.onChange(next);
+			},
+			close: () => {
+				this.subPage = undefined;
+				this.preview.register(undefined);
+				this.rebuild(this.selectedItemByTab[this.tab]);
+				this.invalidate();
+			},
+		});
+		// The extension needs a handle on the page: `session_shutdown` can arrive while it is open.
+		this.preview.register(() => this.subPage?.dispose());
+		this.rebuild();
 	}
 
 	private switchTab(offset: number): void {
@@ -708,6 +743,14 @@ class SettingsUi implements SettingsUiHandle {
 		const copy = COPY[this.config.settingsLanguage];
 		this.container.clear();
 		this.container.addChild(new Text(this.theme.bold(this.theme.fg("accent", copy.title)), 1, 0));
+
+		if (this.subPage) {
+			// The page brings its own hint and rows, and no tab bar: ←/→ cycle presets here, so showing
+			// tabs the keyboard cannot reach would be a lie.
+			this.container.addChild(this.subPage);
+			this.cachedLines = undefined;
+			return;
+		}
 
 		const tabBar = TABS.map((tab) => {
 			const active = tab === this.tab;
@@ -736,6 +779,11 @@ class SettingsUi implements SettingsUiHandle {
 	}
 
 	handleInput(data: string): void {
+		if (this.subPage) {
+			this.subPage.handleInput(data);
+			this.invalidate();
+			return;
+		}
 		if (matchesKey(data, Key.tab) || matchesKey(data, Key.right)) {
 			this.switchTab(1);
 			this.invalidate();
@@ -747,7 +795,7 @@ class SettingsUi implements SettingsUiHandle {
 			return;
 		}
 		if (matchesKey(data, Key.escape) || matchesKey(data, "q")) {
-			this.onClose();
+			this.close();
 			return;
 		}
 		if (matchesKey(data, Key.space) || data === " ") {
@@ -780,6 +828,23 @@ class SettingsUi implements SettingsUiHandle {
 		this.cachedLines = undefined;
 		this.container.invalidate();
 	}
+
+	/** Closing the overlay must put a live preview back: the page is the only owner of that state. */
+	close(): void {
+		const page = this.subPage;
+		this.subPage = undefined;
+		this.preview.register(undefined);
+		page?.dispose();
+		this.onClose();
+	}
+}
+
+/** How the settings page reaches the extension for the in-memory half of a theme preview. */
+export interface PreviewBridge {
+	/** Show `config` without writing it. */
+	preview: (config: OpenTuiConfig) => void;
+	/** Hand the extension the live page's disposer, or `undefined` once it is gone. */
+	register: (dispose: (() => void) | undefined) => void;
 }
 
 export function registerSettingsCommand(
@@ -788,6 +853,10 @@ export function registerSettingsCommand(
 		getConfig: () => OpenTuiConfig;
 		onConfigChanged: (config: OpenTuiConfig) => void;
 		onOverlayClosed?: () => void;
+		/** In-memory preview: show `config` now without writing it. */
+		onPreviewConfig?: (config: OpenTuiConfig) => void;
+		/** The live preview page's disposer, so `session_shutdown` can still put the theme back. */
+		onPreviewSessionChange?: (dispose: (() => void) | undefined) => void;
 	},
 ): void {
 	pi.registerCommand("open-tui", {
@@ -801,6 +870,10 @@ export function registerSettingsCommand(
 					hooks.getConfig(),
 					(config) => hooks.onConfigChanged(config),
 					() => done(undefined),
+					{
+						preview: (config) => hooks.onPreviewConfig?.(config),
+						register: (dispose) => hooks.onPreviewSessionChange?.(dispose),
+					},
 				);
 				return {
 					capturesViewportInput: true,

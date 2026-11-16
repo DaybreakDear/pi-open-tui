@@ -89,6 +89,8 @@ export default function (pi: ExtensionAPI) {
 	let cleanupBubble: (() => void) | undefined;
 	let cleanupTimestamps: (() => void) | undefined;
 	let pendingUiChange: PendingUiChange | undefined;
+	// Set while the theme preview page is open: `session_shutdown` can arrive with a preview on screen.
+	let disposeThemePreview: (() => void) | undefined;
 	const footerSegments = createFooterSegments(pi.events, () => requestFooterRender?.());
 	const gitRefresher = new GitStatusRefresher((git) => {
 		if (!sessionLifecycle.isCurrent() || !active || !config.enabled) return;
@@ -437,6 +439,10 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", async (_event, ctx) => {
 		sessionLifecycle.shutdown();
+		// Put the terminal colours back before the UI goes away: the preview page writes nothing to the
+		// file, so a shutdown that skipped this would leave the session on a theme nobody chose.
+		disposeThemePreview?.();
+		disposeThemePreview = undefined;
 		// Always unwatch, even when the UI was never installed for this session.
 		stopContextBlocksWatch();
 		gitRefresher.reset();
@@ -651,6 +657,22 @@ export default function (pi: ExtensionAPI) {
 		config = nextConfig;
 	};
 
+	/**
+	 * The preview half of the theme preview page: same repaint, no write. `ctx.ui.setTheme` is off
+	 * limits here — it stops the theme watcher and disables auto-sync (theme-controller.js:104-110),
+	 * which would silently kill live theme reloading for the rest of the session.
+	 */
+	const previewConfig = (nextConfig: OpenTuiConfig): void => {
+		// Only the `theme` block can differ, but comparing keeps a no-op revert from repainting.
+		if (!themeBlockChanged(config.theme, nextConfig.theme)) {
+			config = nextConfig;
+			return;
+		}
+		skinEpoch += 1;
+		config = nextConfig;
+		repaint();
+	};
+
 	registerSettingsCommand(pi, {
 		getConfig: () => config,
 		onConfigChanged: (newConfig) => {
@@ -695,6 +717,11 @@ export default function (pi: ExtensionAPI) {
 				applyUi(lastCtx);
 				scheduleGitRefresh(lastCtx, true);
 			}
+		},
+		// The preview page shows a theme without saving it; `index.ts` keeps the only writer.
+		onPreviewConfig: (nextConfig) => previewConfig(nextConfig),
+		onPreviewSessionChange: (dispose) => {
+			disposeThemePreview = dispose;
 		},
 	});
 

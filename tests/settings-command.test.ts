@@ -514,7 +514,7 @@ test("cycles the thinking peek line count from Appearance", async () => {
 	const settings = await openSettings(config);
 	// Appearance → … → Message timestamps → Thinking peek
 	settings.component.handleInput("\t");
-	settings.press("\x1b[B", 12);
+	settings.press("\x1b[B", 13);
 	assert.match(selectedLine(settings.component), /Thinking peek/);
 	assert.match(selectedLine(settings.component), /1 line/);
 	settings.component.handleInput("\r");
@@ -530,7 +530,7 @@ test("toggles the thinking peek counts from Appearance", async () => {
 	const settings = await openSettings();
 	// Appearance → … → Thinking peek → Thinking peek counts
 	settings.component.handleInput("\t");
-	settings.press("\x1b[B", 13);
+	settings.press("\x1b[B", 14);
 	assert.match(selectedLine(settings.component), /Thinking peek counts/);
 	assert.match(selectedLine(settings.component), /On/);
 
@@ -631,7 +631,7 @@ test("cycles theme presets from the Appearance tab", async () => {
 test("cycles dividers and toggles the theme structure from the Appearance tab", async () => {
 	const settings = await openSettings();
 	settings.component.handleInput("\t");
-	settings.press("\x1b[B", 6);
+	settings.press("\x1b[B", 7);
 	assert.match(selectedLine(settings.component), /Dividers/);
 	assert.match(selectedLine(settings.component), /Line/);
 

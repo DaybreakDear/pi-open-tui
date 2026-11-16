@@ -17,7 +17,7 @@ You only need to specify values you want to change; missing fields inherit [the 
 | Tab | Sections |
 | --- | --- |
 | General | Extension, Interface, Messages & tools, Footer |
-| Appearance | Icons, Editor |
+| Appearance | Icons, Editor, Theme preview |
 | Footer | Location, Git, Runtime, Usage, Other |
 | Telemetry | Enabled (standalone master switch), Measurements |
 
@@ -151,7 +151,7 @@ For wide Nerd glyphs that consume the gap before a label, enable **Footer → Ot
 | 页面 | 分组 |
 | --- | --- |
 | 常规 | 扩展、界面、消息与工具、底栏 |
-| 外观 | 图标、输入框 |
+| 外观 | 图标、输入框、主题预览 |
 | 底栏 | 位置、Git、运行环境、用量、其他 |
 | 遥测 | 启用（独立总开关）、测量指标 |
 

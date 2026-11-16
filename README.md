@@ -143,9 +143,12 @@ Settings are stored in `open-tui.json` inside Pi's agent directory (default: `~/
 | Tool view | General → Messages & tools | Native |
 | Footer in editor border | General → Footer | Off |
 | Icons and cursor style | Appearance | Auto icons, block cursor |
+| Theme preview | Appearance → Preview themes | ←/→ previews, Enter saves, Esc cancels |
 | Footer fields and telemetry measurements | Footer / Telemetry | Individually configurable |
 
 Selecting **Tool view: Compact** reveals **Compact extension tools** as a child setting. Switching back to Native hides it and retains its value. The [configuration reference](./docs/configuration.md#english) contains the complete JSON defaults, every option, and tool exclusions.
+
+**Appearance → Preview themes** opens a preview page for the five built-in open-tui presets. ←/→ repaint the transcript with the next preset immediately, so the colours can be judged on real messages rather than on a swatch list; the rows show each preset's thinking, tool, user-rail and divider colours. Enter saves the preset you are looking at, and Esc — like closing the dialog — restores exactly the colours and switches that were in place when the page opened. Nothing is written until Enter.
 
 ## Header, footer, and editor
 
