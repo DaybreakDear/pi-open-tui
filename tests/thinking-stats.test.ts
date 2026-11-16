@@ -106,9 +106,12 @@ test("no thinking stats (a task without thinking) appends nothing", () => {
 	assert.equal(transform({}), "pondering the shape of the parser");
 });
 
-test("only the visible thinking face is touched: the hidden label path keeps its own probe", () => {
-	// Pi never invokes the assistant-thinking transform while the thinking block is hidden, so the
-	// transformer must stay out of the other faces instead of inventing a second rendering path.
+test("only the visible thinking face is claimed: a hidden run renders Pi's Text label, never this face", () => {
+	// Pi renders hidden thinking as `new Text(hiddenThinkingLabel)` and only the visible branch gets
+	// the `assistant-thinking` transform, so this module must stay off every other face instead of
+	// inventing a second rendering path. The hidden label keeps flowing through
+	// `editor.setLatestHiddenThinkingLabel`; `tests/telemetry.test.ts` ("keeps a bounded peek scoped
+	// to the current assistant") asserts that probe end to end.
 	for (const messageType of ["user", "assistant"] as const) {
 		const transformer = createThinkingStatsTransformer({ stats: () => stats, showCounts: () => true, dim });
 		assert.equal(transformer("answer", { ...thinkingContext(false), messageType }), "answer");
