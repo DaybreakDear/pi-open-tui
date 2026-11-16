@@ -76,8 +76,8 @@ function assistant(timestamp?: number, iso?: string): AssistantMessageComponent 
 	return new AssistantMessageComponent(assistantMessage(timestamp), true, markdownTheme, "Thinking...", 1, [], "message-1", iso);
 }
 
-function user(): UserMessageComponent {
-	return new UserMessageComponent("hi there", markdownTheme, 1, [], "message-2");
+function user(iso?: string): UserMessageComponent {
+	return new UserMessageComponent("hi there", markdownTheme, 1, [], "message-2", iso);
 }
 
 test("T7.1 an ISO timestamp from the restore path wins over the live one", () => {
@@ -175,10 +175,168 @@ test("T7.7 inside the bubble the stamp rides the top border row", () => {
 		assert.ok(expected !== undefined);
 		const rows = assistant(MS).render(40);
 		const bare = stripTerminalSequences(rows[0]!);
-		assert.equal(bare, `╭${"─".repeat(31)} ${expected} ╮`);
+		// The rule takes whatever the label leaves of the inner width, so the stamp may grow freely.
+		const rules = 40 - 2 - (visibleWidth(expected) + 2);
+		assert.equal(bare, `╭${"─".repeat(rules)} ${expected} ╮`);
 		for (const row of rows) assert.equal(visibleWidth(row), 40);
 	} finally {
 		cleanup?.();
+		bubble?.();
+	}
+});
+
+// ---------------------------------------------------------------------------
+// V0.6-10: stamps carry a date, with the granularity picked by distance from today.
+//
+// Every fixture below is built with `new Date(year, month, day, hour, minute)`, i.e. a *local* civil
+// time, and the reference instant is passed to `formatTimestamp` explicitly. Nothing parses a UTC
+// string and nothing reads the wall clock, so these cases classify identically under any `TZ`.
+// ---------------------------------------------------------------------------
+
+/** The pinned "now": 2026-11-15 14:32 local. Only its calendar day matters to the classifier. */
+const NOW = new Date(2026, 10, 15, 14, 32);
+const NOW_MS = NOW.getTime();
+
+/** `NOW`'s local calendar day shifted by `dayOffset`, at `hour:minute`; the constructor normalises. */
+function localMillis(dayOffset: number, hour = 14, minute = 32, year = NOW.getFullYear(), month = NOW.getMonth()): number {
+	return new Date(year, month, NOW.getDate() + dayOffset, hour, minute).getTime();
+}
+
+/** The same local instant as the ISO string Pi's restore path carries. */
+function localIso(dayOffset: number, hour = 14, minute = 32, year = NOW.getFullYear(), month = NOW.getMonth()): string {
+	return new Date(localMillis(dayOffset, hour, minute, year, month)).toISOString();
+}
+
+test("T10.1 today prints the clock alone", () => {
+	assert.equal(formatTimestamp(localMillis(0), NOW_MS), "14:32");
+});
+
+test("T10.2 yesterday is named, not timed", () => {
+	assert.equal(formatTimestamp(localMillis(-1), NOW_MS), "昨天 14:32");
+});
+
+test("T10.3 the same year carries month and day, unpadded months and days, padded clock", () => {
+	// March 5 is two months back; `3月5日` has no zero padding, `09:05` keeps it.
+	assert.equal(formatTimestamp(new Date(NOW.getFullYear(), 2, 5, 9, 5).getTime(), NOW_MS), "3月5日 09:05");
+});
+
+test("T10.4 an earlier year carries the year", () => {
+	assert.equal(formatTimestamp(localMillis(0, 14, 32, NOW.getFullYear() - 1), NOW_MS), "2025年11月15日 14:32");
+});
+
+test("T10.5 23:59 and the next 00:01 are one calendar day apart, not two minutes", () => {
+	// Two minutes of elapsed time across midnight: a millisecond comparison would call this today.
+	const now = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate(), 0, 1).getTime();
+	const lateNight = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() - 1, 23, 59).getTime();
+	assert.equal(formatTimestamp(lateNight, now), "昨天 23:59");
+	assert.equal(formatTimestamp(now, now), "00:01");
+});
+
+test("T10.6 the year boundary follows the calendar day, not the year", () => {
+	const now = new Date(2026, 0, 1, 0, 1).getTime();
+	const newYearsEve = new Date(2025, 11, 31, 23, 59).getTime();
+	assert.equal(formatTimestamp(newYearsEve, now), "昨天 23:59");
+	// Two days later the same instant is last year's, so it needs the full date.
+	assert.equal(formatTimestamp(newYearsEve, new Date(2026, 0, 2, 12, 0).getTime()), "2025年12月31日 23:59");
+});
+
+test("T10.7 a future timestamp reads as today and never as a future date", () => {
+	assert.equal(formatTimestamp(localMillis(1), NOW_MS), "14:32");
+	assert.equal(formatTimestamp(localMillis(0, 14, 32, NOW.getFullYear() + 1), NOW_MS), "14:32");
+});
+
+test("T10.8 chinese renders like all and does include user messages", () => {
+	initTheme();
+	const stamp = localIso(0, 14, 32, NOW.getFullYear() - 1);
+	const render = (timestamps: ThemeConfig["timestamps"]) => {
+		current = config({ timestamps });
+		const cleanup = install();
+		try {
+			return { user: user(stamp).render(40), assistant: assistant(undefined, stamp).render(40) };
+		} finally {
+			cleanup?.();
+		}
+	};
+	const all = render("all");
+	const chinese = render("chinese");
+	assert.deepEqual(chinese, all, "all and chinese share one formatter today");
+	const off = render("off");
+	assert.notDeepEqual(chinese.user, off.user, "chinese must stamp the user row");
+
+	const expected = formatTimestamp(Date.parse(stamp), Date.now());
+	assert.ok(expected !== undefined);
+	assert.ok(stripTerminalSequences(chinese.user[0]!).endsWith(expected), JSON.stringify(chinese.user[0]));
+	assert.ok(stripTerminalSequences(chinese.assistant[0]!).startsWith(expected), JSON.stringify(chinese.assistant[0]));
+});
+
+test("T10.9 off leaves the message rows byte for byte identical", () => {
+	initTheme();
+	const stamp = localIso(-1);
+	const assistantBaseline = assistant(undefined, stamp).render(40);
+	const userBaseline = user(stamp).render(40);
+	current = config({ timestamps: "off" });
+	const cleanup = install();
+	try {
+		assert.deepEqual(assistant(undefined, stamp).render(40), assistantBaseline);
+		assert.deepEqual(user(stamp).render(40), userBaseline);
+	} finally {
+		cleanup?.();
+	}
+});
+
+test("T10.10 assistant mode leaves user messages alone", () => {
+	initTheme();
+	const stamp = localIso(-1);
+	const baseline = user(stamp).render(40);
+	current = config({ timestamps: "assistant" });
+	const cleanup = install();
+	try {
+		assert.deepEqual(user(stamp).render(40), baseline);
+		const expected = formatTimestamp(Date.parse(stamp), Date.now());
+		assert.ok(expected !== undefined);
+		const rows = assistant(undefined, stamp).render(40);
+		assert.ok(stripTerminalSequences(rows[0]!).startsWith(expected), JSON.stringify(rows[0]));
+	} finally {
+		cleanup?.();
+	}
+});
+
+test("T10.11 the grown stamp still fits 24 and 25 columns without overflow", () => {
+	initTheme();
+	// A cross-year stamp is the longest form: `2025年11月15日 14:32` is 20 columns.
+	const stamp = localIso(0, 14, 32, NOW.getFullYear() - 1);
+	const label = formatTimestamp(Date.parse(stamp), Date.now());
+	assert.ok(label !== undefined);
+	assert.equal(visibleWidth(label), 20, "fixture label width changed");
+
+	const widths = [TIMESTAMP_MIN_WIDTH, TIMESTAMP_MIN_WIDTH + 1];
+	const bubble = installBubble({ theme: () => theme, config: () => current });
+	try {
+		for (const width of widths) {
+			for (const style of ["off", "rounded"] as const) {
+				current = config({ bubble: style });
+				const cleanup = install();
+				try {
+					const assistantRows = assistant(undefined, stamp).render(width);
+					const userRows = user(stamp).render(width);
+					for (const row of [...assistantRows, ...userRows]) {
+						assert.ok(visibleWidth(row) <= width, `row overflows ${width} columns: ${JSON.stringify(row)}`);
+					}
+					// The stamp is placed, not dropped: a dropped stamp would be the cheap way to "fit".
+					assert.ok(
+						stripTerminalSequences(assistantRows[0]!).includes(label),
+						`no stamp at ${width} columns (bubble ${style}): ${JSON.stringify(assistantRows[0])}`,
+					);
+					assert.ok(
+						stripTerminalSequences(userRows[0]!).includes(label),
+						`no user stamp at ${width} columns: ${JSON.stringify(userRows[0])}`,
+					);
+				} finally {
+					cleanup?.();
+				}
+			}
+		}
+	} finally {
 		bubble?.();
 	}
 });
