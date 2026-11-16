@@ -91,12 +91,14 @@ A Pi theme restyles Pi. open-tui additionally paints its own surfaces through th
 | `preset` | `"tokyo-night"` | `tokyo-night`, `catppuccin-mocha`, `gruvbox-dark`, `rose-pine-moon`, or `pi` for Pi's own tokens |
 | `slots` | `{}` | Per-slot colour overrides; see the slot table below |
 | `dividers` | `"line"` | `line`, `dashed`, or `none`. Draws a rule between turns and colours footer separators |
-| `gutter` | `true` | A vertical rail beside command output. Only drawn when `toolView.mode` is `compact` |
+| `gutter` | `true` | A vertical rail beside command output. Only drawn when `toolView.mode` is `compact`; the settings row appends `(needs compact)` while it is on without it |
 | `banding` | `false` | Alternate tool rows get a faint background |
 | `userBar` | `true` | A coloured rail beside user messages |
 | `expandHint` | `"plain"` | `key` underlines the `ctrl+o` keycap in expand hints |
-| `bubble` | `"rounded"` | A rounded frame around assistant replies that spends the width budget instead of adding columns. `off` restores the unpatched render, byte for byte |
-| `timestamps` | `"all"` | An `HH:MM` stamp per message: `all`, `assistant`, or `off`. It rides the bubble's top border, or the blank line Pi already reserves, and never adds a row |
+| `bubble` | `"rounded"` | A rounded frame around **assistant** replies only; user messages are never framed. It spends the width budget instead of adding columns: each side costs one `│` plus a gap column, and a terminal narrower than 20 columns, an inline image, or a row that renders wider than the inner width is left unframed rather than clipped. `off` restores the unpatched render, byte for byte |
+| `timestamps` | `"all"` | A right-aligned `HH:MM` stamp: `all` on user and assistant messages, `assistant` on replies only, `off` for none. A reply's stamp rides the bubble's top border, or the blank row Pi already reserves when the bubble is off; a user stamp only writes into trailing blank columns of its first row. It never adds a row, and both are skipped below 24 columns |
+
+The clock comes from the message itself: Pi's restored messages carry an ISO `timestamp`, live replies carry `lastMessage.timestamp` in epoch milliseconds, and a component with neither gets one snapshot of the clock at its first render, so a resize or a theme switch cannot move the stamp.
 
 > **Known trade-off:** the frame's `│` and `─` are real cells, so Pi's mouse selection copies them along with the reply — Pi strips ANSI on copy and has no hook for excluding border glyphs.
 
@@ -174,11 +176,11 @@ Toggle notification fields under **Telemetry → Measurements**, or live speed u
 
 ### Third-party cost readouts
 
-The subagent and delegate cost lines printed by `pi-subagents` and `billion-context-pi` are formatted by those packages, which hardcode the dollar sign and read no configuration at all, so a patch of the files Pi loads is the only way to make them follow `cost.currency`. Run `npm run patch:cost` (add `--check` to verify only, `--dry-run` to preview, `--revert` to restore from the `.pi-open-tui.bak` files, `--root <dir>` when the packages live outside Pi's agent directory). It rewrites the nine `$${…toFixed(4)}` sites and keeps their four decimals, so with `currency: "cny"` at 7.15 a readout of `$1.3660` becomes `¥9.7669`. **Re-run it after upgrading either package**: the bundles are replaced wholesale, and an upgraded chunk would otherwise quietly print dollars again (`--check` exits 1 while that is the case).
+The subagent and delegate cost lines printed by `pi-subagents` and `billion-context-pi` are formatted by those packages, which hardcode the dollar sign and read no configuration at all, so a patch of the files Pi loads is the only way to make them follow `cost.currency`. Run `npm run patch:cost` (add `--check` to verify only, `--dry-run` to preview, `--revert` to restore from the `.pi-open-tui.bak` files, `--root <dir>` when the packages live outside Pi's agent directory). It rewrites the nine `$${…toFixed(4)}` sites and keeps their four decimals, so with `currency: "cny"` at 7.15 a readout of `$1.3660` becomes `¥9.7669`. The files it edits live inside those installed packages, outside this repository, so a fresh clone or CI does not carry them; skipping the step leaves those readouts in dollars while the footer and turn telemetry follow `cost.currency`. **Re-run it after upgrading either package**: the bundles are replaced wholesale, and an upgraded chunk would otherwise quietly print dollars again (`--check` exits 1 while that is the case).
 
 ### Known limitations
 
-The divider that opens each turn carries that turn's numbers. They travel to the rule inside a hidden marker and are formatted when the rule is drawn, so a theme switch recolours the label together with the rest of the transcript.
+The numbers belong to the rule that opens the *next* user message, not to the turn they describe: `agent_settled` leaves them with the skin, which prepends a hidden marker to the following user message's markdown, and the ruling transformer hands that payload to the rule on the same message. The handoff is scoped to the `Markdown` instance that rendered the marker, because a single shared slot leaked one instance's label into another instance's rule. The numbers are formatted when the rule is drawn, so a theme switch recolours the label together with the rest of the transcript.
 
 - A user message that itself contains a `---` line shows the label on both rules. Pi caches rendered blocks by the raw token, so the `---` we prepend and the author's own line share one decorated block; a transformer cannot separate them.
 - A marker that cannot be read — a hand-edited transcript, or a marker written by another release — renders a bare divider with no numbers rather than numbers from another turn.
@@ -194,6 +196,8 @@ With Pi's **Hide thinking** enabled, pi-open-tui replaces the hidden block's `Th
 ```
 
 Choose **Off**, **1 line**, or **2 lines** under **Appearance → Theme → Thinking peek**. The ticker appears only when the model streams reasoning, settles on a check mark when the answer begins, and returns to Pi's native label after the task settles. It follows Pi's Hide thinking toggle immediately and clips text to fit the available width.
+
+With `thinkingPeek.showCounts` on, a settled reasoning block also gains `· 12.3s · 1.2k tok` beneath it. Counters are keyed by the block's own text, so a resize or a theme switch repaints an older block with the numbers it finished with instead of the current turn's, and a block with no recorded stats shows nothing rather than borrowing someone else's. The line only exists where Pi draws visible thinking: with **Hide thinking** on, Pi never runs the transformer, so the counters are dead there and the peek header is the only readout.
 
 ## Tool view
 

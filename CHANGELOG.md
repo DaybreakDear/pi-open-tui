@@ -1,10 +1,19 @@
 # Changelog
 
-## [Unreleased]
+## [0.6.0] - 2026-11-16
 
 ### Added
 
-- Add `npm run patch:cost` (`scripts/patch-cost-display.mjs`), which makes the subagent and delegate cost readouts follow `cost.currency`. `pi-subagents` and `billion-context-pi` format those nine lines themselves, hardcode the dollar sign, and read no configuration, so patching the files Pi loads is the only way to reach them. The injected formatter keeps the four decimals, reads `open-tui.json` through the same rate window as the footer, and needs no import from this package, so `$1.3660` becomes `¥9.7669`. `--check`, `--dry-run`, and `--revert` cover verification and rollback; re-run it after upgrading either package.
+- Add `theme.bubble` (default `"rounded"`, `off` disables it): a rounded frame around **assistant** replies only. User messages stay unframed, which was an explicit decision: the rail already marks them and a second border adds noise. The frame reserves one `│` plus a gap column per side, so it spends the reply's existing width instead of adding columns, and it steps aside below 20 columns, for inline images, and for rows that render wider than the inner width; a half-drawn or clipped frame is worse than the unpatched render.
+- Add `theme.timestamps` (default `"all"`, also `assistant` and `off`): a right-aligned `HH:MM` stamp taken from the message's own timestamp. It rides the bubble's top border or the blank row Pi already reserves, so no row is added, and it is skipped below 24 columns.
+- Add a theme preview page under `/settings` → Appearance. ←/→ repaint the transcript with each of the five open-tui presets, Enter applies and persists, and Esc restores the colours and switches captured when the page opened. Only open-tui presets are previewed, not Pi's global theme list.
+- Add `npm run patch:cost` (`scripts/patch-cost-display.mjs`), which makes the subagent and delegate cost readouts follow `cost.currency`. `pi-subagents` and `billion-context-pi` format those nine lines themselves, hardcode the dollar sign, and read no configuration, so patching the files Pi loads is the only way to reach them. The injected formatter keeps the four decimals, reads `open-tui.json` through the same rate window as the footer, and needs no import from this package, so `$1.3660` becomes `¥9.7669`. `--check`, `--dry-run`, and `--revert` cover verification and rollback; re-run it after upgrading either package, because the patched files live inside those installed packages, outside this repository.
+
+### Fixed
+
+- Hand the divider's telemetry label over per `Markdown` instance. The label is drawn on the rule above the *next* user message, and a single module-level slot let one instance's numbers reach another instance's rule, so the payload now travels through the instance that rendered the marker and is cleared with it.
+- Key thinking block counters by the block's own text. One global slot repainted an older reasoning block with the current turn's numbers during a resize or theme switch; a block now shows the statistics it finished with, and a block with no recorded stats shows nothing rather than guessing.
+- Show `(needs compact)` on the Tool gutter setting while `theme.gutter` is on without `toolView.mode: "compact"`, since the rail is not drawn there.
 
 ## [0.5.0] - 2026-11-15
 

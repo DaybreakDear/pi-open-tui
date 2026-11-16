@@ -37,7 +37,7 @@ Tab/Shift+Tab or ←/→ switches tabs; ↑/↓ or Page Up/Page Down moves betwe
 | `cursorStyle` | `"block"` | `"block"`, `"bar"`, or `"underline"`; the latter two need terminal cursor-shape support |
 | `icons.mode` | `"auto"` | `"auto"`, `"nerd"`, `"unicode"`, or `"ascii"`; see [Icons](#icons) |
 | `thinkingPeek.lines` | `1` | `0` (off), `1`, or `2`; visible while Pi's Hide thinking setting is on and reasoning is streamed |
-| `thinkingPeek.showCounts` | `true` | Append `12.3s · 1.2k tok` to the thinking header; `false` restores the 0.4.6 label |
+| `thinkingPeek.showCounts` | `true` | Append `12.3s · 1.2k tok` to the peek header, and a settled reasoning block's own statistics beneath it. Counters are keyed by the block's text, so a repaint shows that block's numbers rather than the current turn's, and a block without recorded stats shows nothing. `false` restores the 0.4.6 label |
 | `toolView.mode` | `"native"` | `"native"` or `"compact"`; selected when Pi creates each tool row |
 | `toolView.extensionTools` | `false` | In compact mode, includes extension, MCP, and replacement tools |
 | `toolView.exclude` | `[]` | Exact tool names that keep native rendering, including built-ins; edited in the JSON file only |
@@ -95,7 +95,7 @@ Both the footer total and the telemetry rate are formatted by a single formatter
 | `cost.usdToCny` | `7.15` | Manual USD→CNY rate used when `currency` is `cny`. Values outside `0.01`–`1000` fall back to the default |
 | `cost.switchable` | `true` | Allow `ctrl+shift+m` and the settings dialog to toggle the currency. Set to `false` to lock it |
 
-The rate is a fixed, manually entered number — pi-open-tui does not fetch exchange rates. Amounts at or above 0.1 in the display currency use two decimals, smaller amounts use three. A session whose cost rounds below `0.001` shows `$0.000`; negative provider figures are clamped to zero. See [usage and telemetry](./implementation.md#usage-and-telemetry).
+The rate is a fixed, manually entered number — pi-open-tui does not fetch exchange rates. Amounts at or above 0.1 in the display currency use two decimals, smaller amounts use three. A session whose cost rounds below `0.001` shows `$0.000`; negative provider figures are clamped to zero. Third-party readouts (`pi-subagents`, `billion-context-pi`) are formatted by those packages and stay in dollars until `npm run patch:cost` rewrites them; see [third-party cost readouts](../README.md#third-party-cost-readouts). The patched files live inside the installed packages, outside this repository. See [usage and telemetry](./implementation.md#usage-and-telemetry).
 
 ### Theme options
 Pi themes restyle Pi; these options restyle open-tui's own surfaces. `preset` selects a palette, `slots` overrides individual colours, and the rest are structural toggles built on those colours.
@@ -105,14 +105,16 @@ Pi themes restyle Pi; these options restyle open-tui's own surfaces. `preset` se
 | `theme.preset` | `"tokyo-night"` | `tokyo-night`, `catppuccin-mocha`, `gruvbox-dark`, `rose-pine-moon`, or `pi` to paint Pi's own tokens |
 | `theme.slots` | `{}` | Per-slot overrides. The thirteen slots, their target, and the Pi token each falls back to are in the [README slot table](../README.md#open-tui-colours) |
 | `theme.dividers` | `"line"` | `line`, `dashed`, or `none`. Rules between turns; the same slot colours footer separators |
-| `theme.gutter` | `true` | Vertical rail beside command output. Drawn only in the compact tool view (`toolView.mode: "compact"`) |
+| `theme.gutter` | `true` | Vertical rail beside command output. Drawn only in the compact tool view (`toolView.mode: "compact"`); the settings row appends `(needs compact)` while it is on without it |
 | `theme.banding` | `false` | Faint background on alternating tool rows |
 | `theme.userBar` | `true` | Coloured rail beside user messages |
-| `theme.bubble` | `"rounded"` | Rounded frame around assistant replies, sized to the terminal width. `off` restores the unpatched output |
-| `theme.timestamps` | `"all"` | `HH:MM` stamp per message: `all`, `assistant`, or `off`. Never adds a row |
+| `theme.bubble` | `"rounded"` | Rounded frame around assistant replies only. `rounded` or `off`; the frame reserves one `│` plus a gap column per side and gives way to the unframed render below 20 columns, for inline images, or when a row renders wider than the inner width |
+| `theme.timestamps` | `"all"` | Right-aligned `HH:MM` stamps: `all` (user and assistant), `assistant`, or `off`. Taken from the message's own timestamp, with one clock snapshot when the message carries none. Never adds a row, and skipped below 24 columns |
 | `theme.expandHint` | `"plain"` | `key` underlines the `ctrl+o` keycap in expand hints; `plain` keeps the 0.4.x rendering |
 
 `preset: "pi"` renders the colour layer through Pi's tokens. It does **not** by itself restore the 0.4.6 output: `dividers`, `gutter`, `userBar`, and `thinkingPeek.showCounts` also ship on. Set them off to get the old rendering, and note that a failed tool row's title resolves to `error` regardless. Slot values accept `#RRGGBB`, `oklch(...)`, `okhsl(...)`, or a Pi token name. An **unparseable colour** falls back to the slot's preset colour; an **unknown slot name** is dropped silently, so copy the names exactly.
+
+With `theme.dividers` on, the rule above the next user message carries the previous turn's telemetry as a label. The numbers travel inside a hidden marker prepended to that message, and the handoff is scoped to the `Markdown` instance that rendered the marker, so one instance's label cannot reach another instance's rule. A user message that itself contains a `---` line shows the label on both rules: Pi caches rendered blocks by `token.raw`, so the prepended rule and the author's own line share one decorated block.
 
 ### Context blocks
 Read-only linkage to `billion-context-pi`. See [context blocks](../README.md#context-blocks).
@@ -171,7 +173,7 @@ Tab/Shift+Tab 或 ←/→ 切页，↑/↓ 或 Page Up/Page Down 移动，Enter/
 | `cursorStyle` | `"block"` | `"block"`、`"bar"` 或 `"underline"`，后两种需要终端支持光标形状控制 |
 | `icons.mode` | `"auto"` | `"auto"`、`"nerd"`、`"unicode"` 或 `"ascii"`，见[图标](#图标) |
 | `thinkingPeek.lines` | `1` | `0`（关闭）、`1` 或 `2`；Pi 开启 Hide thinking 且模型输出推理时可见 |
-| `thinkingPeek.showCounts` | `true` | 在思考标题后追加 `12.3s · 1.2k tok`；设为 `false` 恢复 0.4.6 的标题 |
+| `thinkingPeek.showCounts` | `true` | 在预览标题后追加 `12.3s · 1.2k tok`，并在已结束的思考块下方追加该块自己的统计。计数按块的文本索引，重绘时展示的是该块自己的数字而不是当前轮次的；没有记录统计的块不显示任何内容。设为 `false` 恢复 0.4.6 的标题 |
 | `toolView.mode` | `"native"` | `"native"` 或 `"compact"`，每条工具行创建时确定 |
 | `toolView.extensionTools` | `false` | 紧凑模式下包含扩展、MCP 和替换内置工具的扩展 |
 | `toolView.exclude` | `[]` | 保持原生渲染的完整工具名，可包含内置工具；仅在 JSON 文件中编辑 |
@@ -229,7 +231,7 @@ Tab/Shift+Tab 或 ←/→ 切页，↑/↓ 或 Page Up/Page Down 移动，Enter/
 | `cost.usdToCny` | `7.15` | `currency` 为 `cny` 时使用的**手动**美元兑人民币汇率。超出 `0.01`–`1000` 的值回退为默认值 |
 | `cost.switchable` | `true` | 允许用 `ctrl+shift+m` 或设置窗口切换货币。设为 `false` 可锁定 |
 
-汇率是不自动更新的固定值，pi-open-tui 不会联网抓取行情。显示货币下不低于 0.1 的金额保留两位小数，更小的金额保留三位；四舍五入后低于 `0.001` 的会话显示 `$0.000`，服务商报告的负数计为 0。详见[用量与遥测](./implementation.md#用量与遥测)。
+汇率是不自动更新的固定值，pi-open-tui 不会联网抓取行情。显示货币下不低于 0.1 的金额保留两位小数，更小的金额保留三位；四舍五入后低于 `0.001` 的会话显示 `$0.000`，服务商报告的负数计为 0。第三方读数（`pi-subagents`、`billion-context-pi`）由那两个包自己格式化，在运行 `npm run patch:cost` 之前一直是美元，见[第三方计费跟随货币设置](../README.zh-CN.md#第三方计费跟随货币设置)。被改写的文件位于已安装的包内部，不在本仓库里。详见[用量与遥测](./implementation.md#用量与遥测)。
 
 ### 主题选项
 
@@ -240,14 +242,16 @@ Pi 主题负责 Pi 本身；下列选项负责 open-tui 自己的区域。`prese
 | `theme.preset` | `"tokyo-night"` | `tokyo-night`、`catppuccin-mocha`、`gruvbox-dark`、`rose-pine-moon`，或 `pi` 表示使用 Pi 自己的 token |
 | `theme.slots` | `{}` | 按槽位覆盖颜色。十三个槽位、各自绘制对象及回退的 Pi token 见 [README 槽位表](../README.zh-CN.md#open-tui-自有配色) |
 | `theme.dividers` | `"line"` | `line`、`dashed` 或 `none`。轮次之间的分隔线；同一槽位也用于底栏分隔符 |
-| `theme.gutter` | `true` | 命令输出左侧的竖线。只在紧凑工具视图（`toolView.mode: "compact"`）下才画出 |
+| `theme.gutter` | `true` | 命令输出左侧的竖线。只在紧凑工具视图（`toolView.mode: "compact"`）下才画出；未开紧凑时设置窗口会在该行后标注 `(需 compact)` |
 | `theme.banding` | `false` | 交替的工具行使用淡背景 |
 | `theme.userBar` | `true` | 用户消息左侧的彩色竖条 |
-| `theme.bubble` | `"rounded"` | 助手回复外层的圆角边框，宽度随终端收放。`off` 回到未打补丁的输出 |
-| `theme.timestamps` | `"all"` | 每条消息的 `HH:MM` 时间戳：`all`、`assistant` 或 `off`。不会新增行 |
+| `theme.bubble` | `"rounded"` | 只包裹助手回复的圆角边框，取值为 `rounded` 或 `off`；每侧预留一个 `│` 加一列间隔，终端窄于 20 列、消息含图片或某行渲染后宽于内宽时回到无框渲染 |
+| `theme.timestamps` | `"all"` | 右对齐的 `HH:MM`：`all`（用户与助手）、`assistant` 或 `off`。时间取自消息自身的时间戳，消息没有时间戳时只取一次时钟快照。不新增行，窄于 24 列时跳过 |
 | `theme.expandHint` | `"plain"` | 设为 `key` 会给展开提示里的 `ctrl+o` 键幅加下划线；`plain` 保持 0.4.x 的渲染 |
 
 `preset: "pi"` 让颜色层走 Pi 的 token，但**单靠它并不能**恢复 0.4.6 的渲染：`dividers`、`gutter`、`userBar` 和 `thinkingPeek.showCounts` 也都默认开启。把这几项关掉才能回到旧渲染，并注意失败工具行的标题无论如何都会落到 `error`。槽位颜色接受 `#RRGGBB`、`oklch(...)`、`okhsl(...)` 或一个 Pi token 名。**无法解析的颜色**会回退到该预设的颜色；**未知槽位名会被静默丢弃**，请照抄名称。
+
+`theme.dividers` 开启时，下一条用户消息上方的规则会以标签形式带上一轮的遥测数字。数字藏在插入该消息 markdown 的隐藏标记里，交接绑定在渲染该标记的 `Markdown` 实例上，因此一个实例的标签不会跑到另一个实例的规则上。用户消息自身包含 `---` 行时，两条规则都会显示标签：Pi 按 `token.raw` 缓存渲染块，前置的规则和作者那行共用同一个装饰块。
 
 ### 上下文块
 
@@ -334,7 +338,9 @@ The complete default configuration is shared by both language references. Set `s
     "gutter": true,
     "banding": false,
     "userBar": true,
-    "expandHint": "plain"
+    "expandHint": "plain",
+    "bubble": "rounded",
+    "timestamps": "all"
   },
   "thinkingPeek": {
     "lines": 1,

@@ -5,10 +5,12 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_CONFIG } from "../extensions/open-tui/config.ts";
 import {
+	BUBBLE_STYLES,
 	DIVIDER_STYLES,
 	EXPAND_HINTS,
 	SLOT_NAMES,
 	THEME_PRESETS,
+	TIMESTAMP_MODES,
 } from "../extensions/open-tui/theme.ts";
 
 // The 0.5.0 review found the configuration reference listing a slot that does
@@ -89,16 +91,47 @@ test("the configuration reference documents thinkingPeek.showCounts", () => {
 	);
 });
 
-test("the configuration reference documents every theme option", () => {
+test("the configuration reference documents every configuration key", () => {
 	const doc = read("docs/configuration.md");
-	for (const key of Object.keys(DEFAULT_CONFIG.theme)) {
-		if (key === "slots") continue; // covered by the README slot table
-		assert.ok(doc.includes(`theme.${key}`), `docs/configuration.md has no row for theme.${key}`);
-	}
-	for (const key of Object.keys(DEFAULT_CONFIG.contextBlocks)) {
-		assert.ok(doc.includes(`contextBlocks.${key}`), `docs/configuration.md has no row for contextBlocks.${key}`);
+	const groups = ["theme", "thinkingPeek", "toolView", "cost", "contextBlocks"] as const;
+	for (const group of groups) {
+		for (const key of Object.keys(DEFAULT_CONFIG[group])) {
+			if (group === "theme" && key === "slots") continue; // covered by the README slot table
+			assert.ok(doc.includes(`${group}.${key}`), `docs/configuration.md has no row for ${group}.${key}`);
+		}
 	}
 });
+
+/** The table row that documents `key`, whether the docs prefix it with the group or not. */
+function rowFor(markdown: string, key: string, group: string): string | undefined {
+	return markdown
+		.split("\n")
+		.find((line) => line.startsWith(`| \`${key}\` |`) || line.startsWith(`| \`${group}.${key}\` |`));
+}
+
+for (const file of [...READMES, "docs/configuration.md"]) {
+	for (const [group, key, accepted] of [
+		["theme", "bubble", BUBBLE_STYLES],
+		["theme", "timestamps", TIMESTAMP_MODES],
+	] as const) {
+		test(`${file} documents exactly the accepted ${key} values`, () => {
+			const row = rowFor(read(file), key, group);
+			assert.ok(row !== undefined, `${file} has no documentation row for ${group}.${key}`);
+			const named = [...row.matchAll(/`"?([a-z][a-z0-9-]*)"?`/g)].map((match) => match[1] ?? "");
+			// The key's own name is backticked in the row; every other bare word is a claimed value.
+			const values = named.filter((name) => name !== key).filter((name) => name !== "compact");
+			for (const value of accepted) {
+				assert.ok(values.includes(value), `${file} never mentions the "${value}" ${group}.${key} value`);
+			}
+			for (const value of values) {
+				assert.ok(
+					(accepted as readonly string[]).includes(value),
+					`${file} names \`${value}\` as a ${group}.${key} value, but the code accepts ${accepted.join(", ")}`,
+				);
+			}
+		});
+	}
+}
 
 test("the changelog does not promise a markdown skin", () => {
 	// markdown-skin.ts only special-cases the `hr` token; headings, fences, and
