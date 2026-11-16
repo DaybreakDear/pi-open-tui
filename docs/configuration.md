@@ -109,8 +109,23 @@ Pi themes restyle Pi; these options restyle open-tui's own surfaces. `preset` se
 | `theme.banding` | `false` | Faint background on alternating tool rows |
 | `theme.userBar` | `true` | Coloured rail beside user messages |
 | `theme.bubble` | `"rounded"` | Rounded frame around assistant replies only. `rounded` or `off`; the frame reserves one `│` plus a gap column per side and gives way to the unframed render below 20 columns, for inline images, or when a row renders wider than the inner width |
-| `theme.timestamps` | `"all"` | Right-aligned `HH:MM` stamps: `all` (user and assistant), `assistant`, or `off`. Taken from the message's own timestamp, with one clock snapshot when the message carries none. Never adds a row, and skipped below 24 columns |
+| `theme.timestamps` | `"all"` | Right-aligned stamps: `all` (user and assistant), `assistant` (replies only), `chinese` (both sides, Chinese wording), or `off`. Taken from the message's own timestamp, with one clock snapshot when the message carries none. Never adds a row, and skipped below 24 columns. Granularity follows the distance from today — see [timestamp granularity](#timestamp-granularity) |
 | `theme.expandHint` | `"plain"` | `key` underlines the `ctrl+o` keycap in expand hints; `plain` keeps the 0.4.x rendering |
+
+#### Timestamp granularity
+
+`all`, `assistant`, and `chinese` pick the same granularity from the message's distance to today:
+
+| Distance from today | Stamp |
+| --- | --- |
+| today | `14:32` |
+| yesterday | `昨天 14:32` |
+| same year | `11月15日 14:32` |
+| an earlier year | `2025年11月15日 14:32` |
+
+Month and day are never zero padded (`11月15日`, not `11月05日`); the clock keeps its padding. "Today" and "yesterday" compare local **calendar days**, not elapsed milliseconds: 23:59 and the next 00:01 are a day apart, and a DST day is still exactly one day. A timestamp in the future (clock skew) reads as today, never as a future date.
+
+`all` and `chinese` render identically today. They are separate values on purpose: `chinese` is the single value that unambiguously includes user messages with Chinese wording, and `all` stays free to move to an ISO date later.
 
 `preset: "pi"` renders the colour layer through Pi's tokens. It does **not** by itself restore the 0.4.6 output: `dividers`, `gutter`, `userBar`, and `thinkingPeek.showCounts` also ship on. Set them off to get the old rendering, and note that a failed tool row's title resolves to `error` regardless. Slot values accept `#RRGGBB`, `oklch(...)`, `okhsl(...)`, or a Pi token name. An **unparseable colour** falls back to the slot's preset colour; an **unknown slot name** is dropped silently, so copy the names exactly.
 
@@ -246,8 +261,23 @@ Pi 主题负责 Pi 本身；下列选项负责 open-tui 自己的区域。`prese
 | `theme.banding` | `false` | 交替的工具行使用淡背景 |
 | `theme.userBar` | `true` | 用户消息左侧的彩色竖条 |
 | `theme.bubble` | `"rounded"` | 只包裹助手回复的圆角边框，取值为 `rounded` 或 `off`；每侧预留一个 `│` 加一列间隔，终端窄于 20 列、消息含图片或某行渲染后宽于内宽时回到无框渲染 |
-| `theme.timestamps` | `"all"` | 右对齐的 `HH:MM`：`all`（用户与助手）、`assistant` 或 `off`。时间取自消息自身的时间戳，消息没有时间戳时只取一次时钟快照。不新增行，窄于 24 列时跳过 |
+| `theme.timestamps` | `"all"` | 右对齐的时间戳：`all`（用户与助手）、`assistant`（仅助手）、`chinese`（两侧都给，中文措辞）或 `off`。时间取自消息自身的时间戳，消息没有时间戳时只取一次时钟快照。不新增行，窄于 24 列时跳过。粒度按距离今天远近选择——见[时间戳粒度](#时间戳粒度) |
 | `theme.expandHint` | `"plain"` | 设为 `key` 会给展开提示里的 `ctrl+o` 键幅加下划线；`plain` 保持 0.4.x 的渲染 |
+
+#### 时间戳粒度
+
+`all`、`assistant`、`chinese` 按消息距离今天远近选择同一套粒度：
+
+| 距离今天 | 时间戳 |
+| --- | --- |
+| 今天 | `14:32` |
+| 昨天 | `昨天 14:32` |
+| 同年 | `11月15日 14:32` |
+| 跨年 | `2025年11月15日 14:32` |
+
+月份与日期不补零（`11月15日`，不是 `11月05日`），时分继续补零。「今天/昨天」按**本地日历日**比较，而不是毫秒差：23:59 与次日 00:01 相差一天，夏令时那天也仍然是一天。未来时间戳（时钟回拨）按今天处理，绝不显示成未来日期。
+
+`all` 与 `chinese` 目前渲染完全一致。两个取值是刻意保留的：`chinese` 是给不想记 `all`/`assistant` 语义的用户准备的单值入口，固定包含用户消息并带中文措辞，而 `all` 以后仍可改成 ISO 日期写法。
 
 `preset: "pi"` 让颜色层走 Pi 的 token，但**单靠它并不能**恢复 0.4.6 的渲染：`dividers`、`gutter`、`userBar` 和 `thinkingPeek.showCounts` 也都默认开启。把这几项关掉才能回到旧渲染，并注意失败工具行的标题无论如何都会落到 `error`。槽位颜色接受 `#RRGGBB`、`oklch(...)`、`okhsl(...)` 或一个 Pi token 名。**无法解析的颜色**会回退到该预设的颜色；**未知槽位名会被静默丢弃**，请照抄名称。
 

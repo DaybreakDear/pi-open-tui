@@ -5,9 +5,14 @@
 ### Added
 
 - Add `theme.bubble` (default `"rounded"`, `off` disables it): a rounded frame around **assistant** replies only. User messages stay unframed, which was an explicit decision: the rail already marks them and a second border adds noise. The frame reserves one `│` plus a gap column per side, so it spends the reply's existing width instead of adding columns, and it steps aside below 20 columns, for inline images, and for rows that render wider than the inner width; a half-drawn or clipped frame is worse than the unpatched render.
-- Add `theme.timestamps` (default `"all"`, also `assistant` and `off`): a right-aligned `HH:MM` stamp taken from the message's own timestamp. It rides the bubble's top border or the blank row Pi already reserves, so no row is added, and it is skipped below 24 columns.
+- Add `theme.timestamps` (default `"all"`, also `assistant`, `chinese`, and `off`): a right-aligned stamp taken from the message's own timestamp. It rides the bubble's top border or the blank row Pi already reserves, so no row is added, and it is skipped below 24 columns.
 - Add a theme preview page under `/settings` → Appearance. ←/→ repaint the transcript with each of the five open-tui presets, Enter applies and persists, and Esc restores the colours and switches captured when the page opened. Only open-tui presets are previewed, not Pi's global theme list.
 - Add `npm run patch:cost` (`scripts/patch-cost-display.mjs`), which makes the subagent and delegate cost readouts follow `cost.currency`. `pi-subagents` and `billion-context-pi` format those nine lines themselves, hardcode the dollar sign, and read no configuration, so patching the files Pi loads is the only way to reach them. The injected formatter keeps the four decimals, reads `open-tui.json` through the same rate window as the footer, and needs no import from this package, so `$1.3660` becomes `¥9.7669`. `--check`, `--dry-run`, and `--revert` cover verification and rollback; re-run it after upgrading either package, because the patched files live inside those installed packages, outside this repository.
+
+### Changed
+
+- Timestamps carry a date, and the granularity is chosen by distance from today: today keeps the bare clock (`14:32`), yesterday is `昨天 14:32`, the same year is `11月15日 14:32`, and an earlier year is `2025年11月15日 14:32`. A bare clock read twenty minutes apart across midnight and said nothing at all a day later. Today and yesterday compare local **calendar days**, not elapsed milliseconds, so a DST day counts as one day and 23:59 → 00:01 counts as two; a future timestamp reads as today instead of as a future date. Month and day are unpadded, the clock keeps its padding, and the 24-column gate is unchanged — a stamp that no longer fits is dropped rather than allowed to overflow the row.
+- `theme.timestamps` gains a `chinese` value: user and assistant messages with Chinese wording. It renders identically to `all` today and is kept as its own branch so it can stay Chinese while `all` moves on.
 
 ### Fixed
 

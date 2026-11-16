@@ -32,8 +32,11 @@ export type ExpandHint = "plain" | "key";
 
 export type BubbleStyle = "rounded" | "off";
 
-/** `assistant` stamps replies only; `off` paints nothing at all. */
-export type TimestampMode = "all" | "assistant" | "off";
+/**
+ * `assistant` stamps replies only; `chinese` stamps both sides and shares `all`'s wording today, but is
+ * a single value for users who do not want to reason about `all` vs `assistant`; `off` paints nothing.
+ */
+export type TimestampMode = "all" | "assistant" | "chinese" | "off";
 
 export interface ThemeConfig {
 	preset: ThemePreset;
@@ -51,7 +54,7 @@ export interface ThemeConfig {
 	expandHint?: ExpandHint;
 	/** Rounded frame around assistant replies. Absent behaves like `"rounded"`; `"off"` renders unpatched. */
 	bubble?: BubbleStyle;
-	/** `HH:MM` stamps on messages. Absent behaves like `"all"`; `"off"` renders unpatched. */
+	/** Date + `HH:MM` stamps on messages. Absent behaves like `"all"`; `"off"` renders unpatched. */
 	timestamps?: TimestampMode;
 }
 
@@ -79,7 +82,7 @@ export const EXPAND_HINTS: readonly ExpandHint[] = ["plain", "key"];
 
 export const BUBBLE_STYLES: readonly BubbleStyle[] = ["rounded", "off"];
 
-export const TIMESTAMP_MODES: readonly TimestampMode[] = ["all", "assistant", "off"];
+export const TIMESTAMP_MODES: readonly TimestampMode[] = ["all", "assistant", "chinese", "off"];
 
 /**
  * The Pi token each slot fell back to before the slot layer existed (v0.4.6). `preset: "pi"` with no

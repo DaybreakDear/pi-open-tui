@@ -96,9 +96,20 @@ A Pi theme restyles Pi. open-tui additionally paints its own surfaces through th
 | `userBar` | `true` | A coloured rail beside user messages |
 | `expandHint` | `"plain"` | `key` underlines the `ctrl+o` keycap in expand hints |
 | `bubble` | `"rounded"` | A rounded frame around **assistant** replies only; user messages are never framed. It spends the width budget instead of adding columns: each side costs one `│` plus a gap column, and a terminal narrower than 20 columns, an inline image, or a row that renders wider than the inner width is left unframed rather than clipped. `off` restores the unpatched render, byte for byte |
-| `timestamps` | `"all"` | A right-aligned `HH:MM` stamp: `all` on user and assistant messages, `assistant` on replies only, `off` for none. A reply's stamp rides the bubble's top border, or the blank row Pi already reserves when the bubble is off; a user stamp only writes into trailing blank columns of its first row. It never adds a row, and both are skipped below 24 columns |
+| `timestamps` | `"all"` | A right-aligned stamp that carries a date: `all` on user and assistant messages, `assistant` on replies only, `chinese` on both with Chinese wording, `off` for none. A reply's stamp rides the bubble's top border, or the blank row Pi already reserves when the bubble is off; a user stamp only writes into trailing blank columns of its first row. It never adds a row, and both are skipped below 24 columns |
 
 The clock comes from the message itself: Pi's restored messages carry an ISO `timestamp`, live replies carry `lastMessage.timestamp` in epoch milliseconds, and a component with neither gets one snapshot of the clock at its first render, so a resize or a theme switch cannot move the stamp.
+
+The stamp carries as much date as the reader needs, chosen from the distance to today — `all`, `assistant`, and `chinese` all use this scale:
+
+| Distance from today | Stamp |
+| --- | --- |
+| today | `14:32` |
+| yesterday | `昨天 14:32` |
+| same year | `11月15日 14:32` |
+| an earlier year | `2025年11月15日 14:32` |
+
+Month and day are never zero padded; the clock keeps its padding. "Today" and "yesterday" compare local **calendar days**, not elapsed milliseconds, so 23:59 and the next 00:01 are a day apart and a DST day is still exactly one day. A future timestamp reads as today instead of as a future date. `all` and `chinese` render identically today: `chinese` is the single value that unambiguously includes user messages with Chinese wording.
 
 > **Known trade-off:** the frame's `│` and `─` are real cells, so Pi's mouse selection copies them along with the reply — Pi strips ANSI on copy and has no hook for excluding border glyphs.
 

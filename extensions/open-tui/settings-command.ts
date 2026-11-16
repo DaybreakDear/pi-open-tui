@@ -117,7 +117,7 @@ const COPY = {
 			open: "Open",
 			dividers: { none: "None", line: "Line", dashed: "Dashed" },
 			bubbles: { rounded: "Rounded", off: "Off" },
-			timestamps: { all: "All", assistant: "Assistant", off: "Off" },
+			timestamps: { all: "All", assistant: "Assistant", chinese: "Chinese", off: "Off" },
 		},
 		notices: {
 			currencyLocked: "Currency switching is disabled. Enable it in open-tui settings.",
@@ -202,7 +202,7 @@ const COPY = {
 			open: "打开",
 			dividers: { none: "无", line: "实线", dashed: "虚线" },
 			bubbles: { rounded: "圆角", off: "关闭" },
-			timestamps: { all: "全部", assistant: "仅助手", off: "关闭" },
+			timestamps: { all: "全部", assistant: "仅助手", chinese: "中文", off: "关闭" },
 		},
 		notices: {
 			currencyLocked: "货币切换已关闭。可在 open-tui 设置中开启。",
