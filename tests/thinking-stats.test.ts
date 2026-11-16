@@ -4,7 +4,9 @@ import type { MarkdownTransformContext, Theme } from "@earendil-works/pi-coding-
 import { Markdown, type MarkdownTheme, type Token } from "@earendil-works/pi-tui";
 import {
 	appendThinkingStats,
+	createThinkingStatsLedger,
 	createThinkingStatsTransformer,
+	thinkingRunsOf,
 	thinkingStatsLine,
 	type ThinkingStatsSnapshot,
 } from "../extensions/open-tui/thinking-stats.ts";
@@ -54,15 +56,21 @@ const thinkingContext = (isStreaming: boolean): MarkdownTransformContext => ({
 
 const stats: ThinkingStatsSnapshot = { elapsedMs: 12_345, tokens: 1_234 };
 
+const BODY = "pondering the shape of the parser";
+
+/** One ledger entry keyed by the block's own text: the identity the transformer looks up. */
 function transform(
 	options: { stats?: ThinkingStatsSnapshot; showCounts?: boolean; markdown?: string; streaming?: boolean } = {},
 ): string {
+	const markdown = options.markdown ?? BODY;
+	const ledger = createThinkingStatsLedger();
+	if (options.stats) ledger.record(markdown, options.stats);
 	const transformer = createThinkingStatsTransformer({
-		stats: () => options.stats,
+		lookup: ledger.lookup,
 		showCounts: () => options.showCounts ?? true,
 		dim,
 	});
-	return transformer(options.markdown ?? "pondering the shape of the parser", thinkingContext(options.streaming ?? false));
+	return transformer(markdown, thinkingContext(options.streaming ?? false));
 }
 
 test("a streaming thinking render carries no counters (the block is still being written)", () => {
@@ -81,9 +89,67 @@ test("a settled thinking render carries exactly one stats line", () => {
 
 test("re-rendering a settled block reproduces the same bytes instead of stacking a line", () => {
 	assert.equal(transform({ stats }), transform({ stats }));
-	// The settled output is a fixed point even when it is fed back in.
+	// Pi re-runs the transformer on the raw `this.text` every time, so the settled bytes never come
+	// back as an input; the `endsWith` guard only covers a caller that feeds them back by hand.
 	const settled = transform({ stats });
 	assert.equal(appendThinkingStats(settled, false, stats, true, dim), settled);
+});
+
+test("two distinct thinking blocks keep their own numbers across a repaint", () => {
+	const ledger = createThinkingStatsLedger();
+	ledger.record("first run", { elapsedMs: 1_000, tokens: 100 });
+	ledger.record("second run", { elapsedMs: 12_345, tokens: 4_500 });
+	const transformer = createThinkingStatsTransformer({ lookup: ledger.lookup, showCounts: () => true, dim });
+	const first = transformer("first run", thinkingContext(false));
+	const second = transformer("second run", thinkingContext(false));
+	assert.equal(first, "first run\n\n· 1.0s · 100 tok");
+	assert.equal(second, "second run\n\n· 12.3s · 4.5k tok");
+	// A repaint (resize, theme switch, `invalidate()`) re-runs both transforms: neither block may
+	// pick up the other's counters, which a single global slot did.
+	assert.equal(transformer("first run", thinkingContext(false)), first);
+	assert.equal(transformer("second run", thinkingContext(false)), second);
+});
+
+test("a stats lookup miss appends nothing instead of painting another turn's numbers", () => {
+	const ledger = createThinkingStatsLedger();
+	ledger.record("known run", { elapsedMs: 12_345, tokens: 4_500 });
+	const transformer = createThinkingStatsTransformer({ lookup: ledger.lookup, showCounts: () => true, dim });
+	assert.equal(transformer("unknown run", thinkingContext(false)), "unknown run");
+	// The known block is unaffected by the miss.
+	assert.equal(transformer("known run", thinkingContext(false)), "known run\n\n· 12.3s · 4.5k tok");
+});
+
+test("the ledger is bounded: the oldest block is forgotten first", () => {
+	const ledger = createThinkingStatsLedger(2);
+	ledger.record("oldest", { elapsedMs: 1, tokens: 1 });
+	ledger.record("middle", { elapsedMs: 2, tokens: 2 });
+	ledger.record("newest", { elapsedMs: 3, tokens: 3 });
+	assert.equal(ledger.size(), 2);
+	assert.equal(ledger.lookup("oldest"), undefined);
+	assert.deepEqual(ledger.lookup("middle"), { elapsedMs: 2, tokens: 2 });
+	assert.deepEqual(ledger.lookup("newest"), { elapsedMs: 3, tokens: 3 });
+	ledger.clear();
+	assert.equal(ledger.size(), 0);
+});
+
+test("a message's thinking runs are keyed exactly as Pi joins them into one Markdown slot", () => {
+	const message = {
+		role: "assistant",
+		content: [
+			{ type: "thinking", thinking: "  first line\n" },
+			{ type: "thinking", thinking: "second line" },
+			{ type: "text", text: "answer" },
+			{ type: "thinking", thinking: "   " },
+			{ type: "thinking", thinking: "third run" },
+		],
+	};
+	// `assistant-message.js` trims each part, drops the empty ones, joins a consecutive run with
+	// "\n\n", and hands that exact string to the transformer — so it is the block's identity.
+	assert.deepEqual(thinkingRunsOf(message), ["first line\n\nsecond line", "third run"]);
+	assert.deepEqual(thinkingRunsOf({ role: "assistant", content: [{ type: "text", text: "no thinking" }] }), []);
+	assert.deepEqual(thinkingRunsOf({ role: "assistant" }), []);
+	assert.deepEqual(thinkingRunsOf(undefined), []);
+	assert.deepEqual(thinkingRunsOf({ role: "assistant", content: [null, { type: "thinking", thinking: 7 }] }), []);
 });
 
 test("the dim helper receives the whole line", () => {
@@ -113,7 +179,7 @@ test("only the visible thinking face is claimed: a hidden run renders Pi's Text 
 	// `editor.setLatestHiddenThinkingLabel`; `tests/telemetry.test.ts` ("keeps a bounded peek scoped
 	// to the current assistant") asserts that probe end to end.
 	for (const messageType of ["user", "assistant"] as const) {
-		const transformer = createThinkingStatsTransformer({ stats: () => stats, showCounts: () => true, dim });
+		const transformer = createThinkingStatsTransformer({ lookup: () => stats, showCounts: () => true, dim });
 		assert.equal(transformer("answer", { ...thinkingContext(false), messageType }), "answer");
 	}
 });

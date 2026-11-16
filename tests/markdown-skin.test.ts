@@ -44,10 +44,21 @@ function config(overrides: Partial<ThemeConfig> = {}): ThemeConfig {
 }
 
 let current: ThemeConfig = config();
+/** The turn summary `agent_settled` would leave for the next divider; the skin consumes it once. */
+let pending: string | undefined;
 
 const startSkin = () => {
 	resetMarkdownSkinSession();
-	return installMarkdownSkin({ theme: () => theme, config: () => current });
+	pending = undefined;
+	return installMarkdownSkin({
+		theme: () => theme,
+		config: () => current,
+		consumeTurnSummary: () => {
+			const next = pending;
+			pending = undefined;
+			return next;
+		},
+	});
 };
 
 const context = (messageType: MarkdownTransformContext["messageType"] = "user"): MarkdownTransformContext => ({
@@ -130,6 +141,58 @@ test("the first user message gets no divider and every later one does", () => {
 		assert.equal(markSkinScope("thinking", context("assistant-thinking")), "thinking");
 		resetMarkdownSkinSession();
 		assert.equal(markSkinScope("after reset", context()), "after reset");
+	} finally {
+		cleanup?.();
+	}
+});
+
+test("a repeated prompt shows the current numbers instead of the cached ones", () => {
+	const cleanup = startSkin();
+	try {
+		assert.equal(markSkinScope("first", context()), "first");
+		pending = "first label";
+		assert.ok(markSkinScope("second", context()).includes("first label"));
+		// The same prompt again, now with a fresh summary: the cache hit must be overwritten, because
+		// the numbers on screen have to describe the turn that just finished.
+		pending = "second label";
+		const repeat = markSkinScope("second", context());
+		assert.ok(repeat.includes("second label"), repeat);
+		assert.ok(!repeat.includes("first label"), repeat);
+	} finally {
+		cleanup?.();
+	}
+});
+
+test("a label cache hit still consumes the summary instead of dropping it", () => {
+	const cleanup = startSkin();
+	try {
+		markSkinScope("first", context());
+		pending = "label one";
+		markSkinScope("second", context());
+		pending = "label two";
+		assert.ok(markSkinScope("second", context()).includes("label two"));
+		// Never leave a pending summary behind: the next unrelated message must stay bare.
+		assert.equal(pending, undefined);
+		assert.equal(markSkinScope("third", context()), "---\n\nthird");
+	} finally {
+		cleanup?.();
+	}
+});
+
+test("a repeated first prompt is a normal message: divider plus its own metrics", () => {
+	const cleanup = startSkin();
+	try {
+		assert.equal(markSkinScope("hello", context()), "hello");
+		// Re-rendering the exemption with no summary at all keeps it divider-free (resize).
+		assert.equal(markSkinScope("hello", context()), "hello");
+		// A new prompt with the same text is a message like any other: it gets the divider and the
+		// summary, instead of silently swallowing both.
+		pending = "turn label";
+		const repeat = markSkinScope("hello", context());
+		assert.ok(repeat.includes("turn label"), repeat);
+		assert.ok(repeat.endsWith("---\n\nhello"), repeat);
+		assert.equal(pending, undefined);
+		assert.equal(markSkinScope("unrelated", context()), "---\n\nunrelated");
 	} finally {
 		cleanup?.();
 	}
