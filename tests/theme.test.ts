@@ -88,8 +88,8 @@ test("tokyo-night keeps the plan's slot values", () => {
 		toolTitle: "#7dcfff",
 		toolOutput: "#a9b1d6",
 		command: "#e0af68",
-		divider: "#3b4261",
-		gutter: "#414868",
+		divider: "#737aa2",
+		gutter: "#737aa2",
 		userBar: "#7aa2f7",
 		cost: "#e0af68",
 	});

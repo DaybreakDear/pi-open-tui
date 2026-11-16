@@ -89,9 +89,12 @@ export const SLOT_TOKEN: Record<SlotName, ThemeColor> = {
 };
 
 /**
- * Preset colours come from the palette in `themes/<preset>.json`. toolTitle, toolOutput, command,
- * cost and divider mirror the tokens those themes already set; toolCall, gutter and userBar sit
- * next to them in the same palette.
+ * Preset colours come from the palette in `themes/<preset>.json`. toolTitle, toolOutput, command
+ * and cost mirror the tokens those themes already set; toolCall and userBar sit next to them in the
+ * same palette. divider and gutter take the palette's `muted` tier instead of the theme's own `mdHr` /
+ * rule colour: those sit at 1.1–1.9:1 on the bubble and tool backgrounds, so the turn rule and the
+ * compact gutter were invisible (measured in tests/contrast.test.ts, which now holds them at ≥ 3:1).
+ * The two slots never touch each other, so they share one colour.
  */
 export const PRESET_SLOTS: Record<Exclude<ThemePreset, "pi">, Partial<Record<SlotName, SlotValue>>> = {
 	"tokyo-night": {
@@ -100,8 +103,8 @@ export const PRESET_SLOTS: Record<Exclude<ThemePreset, "pi">, Partial<Record<Slo
 		toolTitle: "#7dcfff",
 		toolOutput: "#a9b1d6",
 		command: "#e0af68",
-		divider: "#3b4261",
-		gutter: "#414868",
+		divider: "#737aa2",
+		gutter: "#737aa2",
 		userBar: "#7aa2f7",
 		cost: "#e0af68",
 	},
@@ -111,8 +114,8 @@ export const PRESET_SLOTS: Record<Exclude<ThemePreset, "pi">, Partial<Record<Slo
 		toolTitle: "#89dceb",
 		toolOutput: "#bac2de",
 		command: "#f9e2af",
-		divider: "#45475a",
-		gutter: "#313244",
+		divider: "#9399b2",
+		gutter: "#9399b2",
 		userBar: "#89b4fa",
 		cost: "#f9e2af",
 	},
@@ -122,8 +125,8 @@ export const PRESET_SLOTS: Record<Exclude<ThemePreset, "pi">, Partial<Record<Slo
 		toolTitle: "#8ec07c",
 		toolOutput: "#d5c4a1",
 		command: "#fabd2f",
-		divider: "#504945",
-		gutter: "#3c3836",
+		divider: "#bdae93",
+		gutter: "#bdae93",
 		userBar: "#83a598",
 		cost: "#fabd2f",
 	},
@@ -133,8 +136,8 @@ export const PRESET_SLOTS: Record<Exclude<ThemePreset, "pi">, Partial<Record<Slo
 		toolTitle: "#9ccfd8",
 		toolOutput: "#908caa",
 		command: "#f6c177",
-		divider: "#56526e",
-		gutter: "#393552",
+		divider: "#908caa",
+		gutter: "#908caa",
 		userBar: "#c4a7e7",
 		cost: "#f6c177",
 	},
