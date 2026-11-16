@@ -132,7 +132,7 @@ Settings are stored in `open-tui.json` inside Pi's agent directory (default: `~/
 | Setting | Where to find it | Default |
 | --- | --- | --- |
 | Header and settings language | General → Interface | Header on, English |
-| Thinking peek | General → Messages & tools | 1 line |
+| Thinking peek | Appearance → Theme | 1 line |
 | Copy buttons | General → Messages & tools | On, fullscreen only |
 | Tool view | General → Messages & tools | Native |
 | Footer in editor border | General → Footer | Off |
@@ -172,7 +172,7 @@ With Pi's **Hide thinking** enabled, pi-open-tui replaces the hidden block's `Th
           latest thought
 ```
 
-Choose **Off**, **1 line**, or **2 lines** under **General → Messages & tools → Thinking peek**. The ticker appears only when the model streams reasoning, settles on a check mark when the answer begins, and returns to Pi's native label after the task settles. It follows Pi's Hide thinking toggle immediately and clips text to fit the available width.
+Choose **Off**, **1 line**, or **2 lines** under **Appearance → Theme → Thinking peek**. The ticker appears only when the model streams reasoning, settles on a check mark when the answer begins, and returns to Pi's native label after the task settles. It follows Pi's Hide thinking toggle immediately and clips text to fit the available width.
 
 ## Tool view
 

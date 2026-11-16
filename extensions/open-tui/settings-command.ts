@@ -273,8 +273,6 @@ function buildFeaturesItems(config: OpenTuiConfig, copy: SettingsCopy): SettingG
 		{
 			label: copy.sections.messages,
 			items: [
-				{ id: "thinkingPeek", label: copy.labels.thinkingPeek, currentValue: formatThinkingPeekLines(config.thinkingPeek.lines, copy) },
-				{ id: "thinkingPeekCounts", label: copy.labels.thinkingPeekCounts, currentValue: flag(config.thinkingPeek.showCounts) },
 				{ id: "copyButtons", label: copy.labels.copyButtons, currentValue: flag(config.copyButtons) },
 				{ id: "toolView", label: copy.labels.toolView, currentValue: copy.values.toolView[config.toolView.mode] },
 				...(config.toolView.mode === "compact" ? [
@@ -342,6 +340,10 @@ function buildIconsItems(config: OpenTuiConfig, copy: SettingsCopy): SettingGrou
 				{ id: "themeGutter", label: gutterNeedsCompact ? `${copy.labels.gutter} ${copy.hints.gutterNeedsCompact}` : copy.labels.gutter, currentValue: flag(config.theme.gutter) },
 				{ id: "themeBanding", label: copy.labels.banding, currentValue: flag(config.theme.banding) },
 				{ id: "themeUserBar", label: copy.labels.userBar, currentValue: flag(config.theme.userBar) },
+				// Message rendering sits with the other visual rows; it used to be on General, where
+				// nobody looked for it.
+				{ id: "thinkingPeek", label: copy.labels.thinkingPeek, currentValue: formatThinkingPeekLines(config.thinkingPeek.lines, copy) },
+				{ id: "thinkingPeekCounts", label: copy.labels.thinkingPeekCounts, currentValue: flag(config.thinkingPeek.showCounts) },
 			],
 		},
 	];
@@ -442,10 +444,6 @@ function handleSettingChange(
 		if (itemId === "inlineFooter") return { ...config, inlineFooter: !config.inlineFooter };
 		if (itemId === "copyButtons") return { ...config, copyButtons: !config.copyButtons };
 		if (itemId === "settingsLanguage") return toggleLanguage(config);
-		if (itemId === "thinkingPeek") return cycleThinkingPeek(config);
-		if (itemId === "thinkingPeekCounts") {
-			return { ...config, thinkingPeek: { ...config.thinkingPeek, showCounts: !config.thinkingPeek.showCounts } };
-		}
 		if (itemId === "toolView") {
 			return { ...config, toolView: { ...config.toolView, mode: config.toolView.mode === "native" ? "compact" : "native" } };
 		}
@@ -470,6 +468,10 @@ function handleSettingChange(
 		if (itemId === "themeGutter") return { ...config, theme: { ...config.theme, gutter: !config.theme.gutter } };
 		if (itemId === "themeBanding") return { ...config, theme: { ...config.theme, banding: !config.theme.banding } };
 		if (itemId === "themeUserBar") return { ...config, theme: { ...config.theme, userBar: !config.theme.userBar } };
+		if (itemId === "thinkingPeek") return cycleThinkingPeek(config);
+		if (itemId === "thinkingPeekCounts") {
+			return { ...config, thinkingPeek: { ...config.thinkingPeek, showCounts: !config.thinkingPeek.showCounts } };
+		}
 	}
 	if (tab === "segments") {
 		return toggleSetting(config, itemId as keyof OpenTuiConfig["footerSegments"]);

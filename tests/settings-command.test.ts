@@ -292,8 +292,8 @@ test("supports localized settings and keyboard shortcuts", async () => {
 
 test("configures inline footer from General settings", async () => {
 	const settings = await openSettings();
-	// Headers are skipped: Enabled → Header → Language → Thinking peek → Peek counts → Copy buttons → Tool view → Footer in editor border.
-	settings.press("\x1b[B", 7);
+	// Headers are skipped: Enabled → Header → Language → Copy buttons → Tool view → Footer in editor border.
+	settings.press("\x1b[B", 5);
 	assert.match(selectedLine(settings.component), /Footer in editor border/);
 	settings.component.handleInput(" ");
 	assert.equal(settings.getConfig().inlineFooter, true);
@@ -302,8 +302,8 @@ test("configures inline footer from General settings", async () => {
 test("toggles copy buttons from General settings", async () => {
 	const settings = await openSettings();
 	assert.equal(settings.getConfig().copyButtons, true);
-	// Enabled → Header → Language → Thinking peek → Peek counts → Copy buttons
-	settings.press("\x1b[B", 5);
+	// Enabled → Header → Language → Copy buttons
+	settings.press("\x1b[B", 3);
 	assert.match(selectedLine(settings.component), /Copy buttons/);
 	settings.component.handleInput(" ");
 	assert.equal(settings.getConfig().copyButtons, false);
@@ -313,8 +313,8 @@ test("toggling tool view settings keeps the other tool view options", async () =
 	const config = structuredClone(DEFAULT_CONFIG);
 	config.toolView.exclude = ["subagent_wait"];
 	const settings = await openSettings(config);
-	// Enabled → Header → Language → Thinking peek → Peek counts → Copy buttons → Tool view
-	for (let i = 0; i < 6; i++) settings.component.handleInput("\x1b[B");
+	// Enabled → Header → Language → Copy buttons → Tool view
+	for (let i = 0; i < 4; i++) settings.component.handleInput("\x1b[B");
 	assert.match(selectedLine(settings.component), /Tool view/);
 	settings.component.handleInput(" ");
 	settings.component.handleInput("\x1b[B");
