@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.0] - 2026-11-23
+
+### Changed
+
+- Draw conversation separators as standalone component rows outside Markdown and copied message text. Heavy solid (`━`) or dashed (`╍`) rules now fill the current message width and resize with the terminal instead of stopping at 80 columns. The divider before each subsequent user message carries the prior turn's telemetry; a second rule separates completed assistant answers from thinking and tool output. Author-written `---` lines remain ordinary rules without duplicate labels. Native mouse hit regions remain aligned.
+- Remove assistant reply bubbles because mouse selection copied their border glyphs. Obsolete `theme.bubble` settings are discarded on load; timestamps remain on Pi's native blank rows.
+- Show sandbox extension statuses published with `ctx.ui.setStatus("sandbox", ...)` in the footer by default, preserving colour but stripping terminal-control sequences. Toggle with `footerSegments.extensionStatuses`.
+
 ## [0.6.0] - 2026-11-16
 
 ### Added

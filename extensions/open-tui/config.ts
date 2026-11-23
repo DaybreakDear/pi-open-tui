@@ -4,7 +4,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { CostConfig } from "./currency.ts";
 import { clampUsdToCny, DEFAULT_COST } from "./currency.ts";
 import type { IconMode } from "./icons.ts";
-import { BUBBLE_STYLES, DIVIDER_STYLES, EXPAND_HINTS, SLOT_NAMES, THEME_PRESETS, TIMESTAMP_MODES, type BubbleStyle, type ExpandHint, type SlotName, type SlotValue, type ThemeConfig, type TimestampMode } from "./theme.ts";
+import { DIVIDER_STYLES, EXPAND_HINTS, SLOT_NAMES, THEME_PRESETS, TIMESTAMP_MODES, type ExpandHint, type SlotName, type SlotValue, type ThemeConfig, type TimestampMode } from "./theme.ts";
 
 export type SettingsLanguage = "en" | "zh";
 export type CursorStyle = "block" | "bar" | "underline";
@@ -156,7 +156,6 @@ export const DEFAULT_CONFIG: OpenTuiConfig = {
 		banding: false,
 		userBar: true,
 		expandHint: DEFAULT_EXPAND_HINT,
-		bubble: "rounded",
 		timestamps: "all",
 	},
 };
@@ -202,9 +201,6 @@ function normalizeTheme(value: unknown): ThemeConfig {
 	const expandHint = EXPAND_HINTS.includes(source.expandHint as ExpandHint)
 		? (source.expandHint as ExpandHint)
 		: DEFAULT_EXPAND_HINT;
-	const bubble: BubbleStyle = BUBBLE_STYLES.includes(source.bubble as BubbleStyle)
-		? (source.bubble as BubbleStyle)
-		: DEFAULT_CONFIG.theme.bubble ?? "rounded";
 	const timestamps: TimestampMode = TIMESTAMP_MODES.includes(source.timestamps as TimestampMode)
 		? (source.timestamps as TimestampMode)
 		: DEFAULT_CONFIG.theme.timestamps ?? "all";
@@ -215,8 +211,10 @@ function normalizeTheme(value: unknown): ThemeConfig {
 			if (typeof slotValue === "string" && slotValue.trim().length > 0) slots[slot] = slotValue.trim();
 		}
 	}
+	// Discard the obsolete frame setting even when loading a saved 0.6 config.
+	const { bubble: _obsoleteBubble, ...knownSource } = source;
 	return {
-		...source,
+		...knownSource,
 		preset,
 		dividers,
 		slots,
@@ -224,7 +222,6 @@ function normalizeTheme(value: unknown): ThemeConfig {
 		banding: typeof source.banding === "boolean" ? source.banding : DEFAULT_CONFIG.theme.banding,
 		userBar: typeof source.userBar === "boolean" ? source.userBar : DEFAULT_CONFIG.theme.userBar,
 		expandHint,
-		bubble,
 		timestamps,
 	};
 }

@@ -1024,6 +1024,22 @@ test("ASCII footer renders icons as semantic labels", () => {
 	assert.equal(extensionStatusReads, 1);
 });
 
+test("sandbox extension statuses retain colours and update without duplicating or leaking terminal controls", () => {
+	let statuses = new Map<string, string>([["sandbox", "\x1b[32mSandbox: enabled\x1b[0m"], ["other", "Ready"]]);
+	const { component, config } = footerFixture({ statuses: () => statuses });
+	const shown = component.render(160).join("\n");
+	assert.equal(shown.split("Sandbox: enabled").length - 1, 1, shown);
+	assert.ok(shown.includes("\x1b[32mSandbox: enabled\x1b[0m"), shown);
+	assert.ok(shown.includes("Ready"), shown);
+	statuses = new Map([["sandbox", "Sandbox: disabled\x1b[2J\x1b]0;spoof\x07"]]);
+	const updated = component.render(160).join("\n");
+	assert.ok(updated.includes("Sandbox: disabled"), updated);
+	assert.ok(!updated.includes("Sandbox: enabled") && !updated.includes("Ready"), updated);
+	assert.ok(!updated.includes("\x1b[2J") && !updated.includes("\x1b]0;spoof"), updated);
+	config.footerSegments.extensionStatuses = false;
+	assert.ok(!component.render(160).join("\n").includes("Sandbox:"));
+});
+
 test("footer renders the session cost through the currency formatter", () => {
 	const entries = [{
 		id: "usage-cost",

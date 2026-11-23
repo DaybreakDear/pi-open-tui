@@ -140,7 +140,6 @@ test("Enter applies and persists the previewed preset", (t) => {
 	assert.equal(loadConfig().theme.preset, "catppuccin-mocha", "Enter must reach the disk");
 	// Every other switch survives the apply: `pi` is a full restore, not a reset to defaults.
 	assert.equal(applied.theme.dividers, "dashed");
-	assert.equal(applied.theme.bubble, DEFAULT_CONFIG.theme.bubble);
 	assert.equal(applied.theme.timestamps, DEFAULT_CONFIG.theme.timestamps);
 	assert.equal(calls.close, 1, "applying leaves the page");
 });
@@ -165,7 +164,6 @@ test("Esc reverts to exactly the configuration captured on entry", (t) => {
 		gutter: captured.theme.gutter,
 		banding: captured.theme.banding,
 		userBar: captured.theme.userBar,
-		bubble: captured.theme.bubble,
 		timestamps: captured.theme.timestamps,
 		expandHint: captured.theme.expandHint,
 	});
@@ -391,7 +389,7 @@ test("the settings overlay is byte-identical to f23a62a on every tab the preview
 	assert.deepEqual(
 		[...appearance.slice(0, entry), ...appearance.slice(entry + 1)],
 		baseline.icons,
-		"Appearance may differ by the entry row and nothing else",
+		"Appearance may differ by the preview entry only",
 	);
 
 	settings.handleInput("\t");
@@ -456,7 +454,7 @@ test("a preview that is still open at session_shutdown reverts once and never th
 });
 
 test("applying from the preview page persists and keeps the other visual switches", (t) => {
-	const host = overlayHarness(t, { preset: "tokyo-night", dividers: "dashed", bubble: "off" });
+	const host = overlayHarness(t, { preset: "tokyo-night", dividers: "dashed", userBar: false });
 
 	const settings = host.open();
 	openPreviewPage(settings);
@@ -466,7 +464,7 @@ test("applying from the preview page persists and keeps the other visual switche
 	const saved = loadConfig().theme;
 	assert.equal(saved.preset, "catppuccin-mocha");
 	assert.equal(saved.dividers, "dashed");
-	assert.equal(saved.bubble, "off");
+	assert.equal(saved.userBar, false);
 	assert.equal(saved.timestamps, host.opened.theme.timestamps);
 	// Applying returns to the settings list rather than closing the overlay.
 	assert.match(settings.render(100).join("\n"), /Theme preset/);
@@ -485,6 +483,5 @@ test("previewConfig shows the preset while appliedConfig keeps the snapshot", ()
 	const applied = appliedConfig(base, "pi");
 	assert.equal(applied.theme.preset, "pi");
 	assert.deepEqual(applied.theme.slots, base.theme.slots, "the user's own overrides come back with pi");
-	assert.equal(applied.theme.bubble, base.theme.bubble);
 	assert.equal(applied.theme.timestamps, base.theme.timestamps);
 });

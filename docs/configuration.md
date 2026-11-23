@@ -104,11 +104,10 @@ Pi themes restyle Pi; these options restyle open-tui's own surfaces. `preset` se
 | --- | --- | --- |
 | `theme.preset` | `"tokyo-night"` | `tokyo-night`, `catppuccin-mocha`, `gruvbox-dark`, `rose-pine-moon`, or `pi` to paint Pi's own tokens |
 | `theme.slots` | `{}` | Per-slot overrides. The thirteen slots, their target, and the Pi token each falls back to are in the [README slot table](../README.md#open-tui-colours) |
-| `theme.dividers` | `"line"` | `line`, `dashed`, or `none`. Rules between turns; the same slot colours footer separators |
+| `theme.dividers` | `"line"` | `line`, `dashed`, or `none`. Standalone rules before subsequent user messages and completed assistant answers (after thinking), not injected into Markdown or copied message text; the same slot colours footer separators |
 | `theme.gutter` | `true` | Vertical rail beside command output. Drawn only in the compact tool view (`toolView.mode: "compact"`); the settings row appends `(needs compact)` while it is on without it |
 | `theme.banding` | `false` | Faint background on alternating tool rows |
 | `theme.userBar` | `true` | Coloured rail beside user messages |
-| `theme.bubble` | `"rounded"` | Rounded frame around assistant replies only. `rounded` or `off`; the frame reserves one `│` plus a gap column per side and gives way to the unframed render below 20 columns, for inline images, or when a row renders wider than the inner width |
 | `theme.timestamps` | `"all"` | Right-aligned stamps: `all` (user and assistant), `assistant` (replies only), `chinese` (both sides, Chinese wording), or `off`. Taken from the message's own timestamp, with one clock snapshot when the message carries none. Never adds a row, and skipped below 24 columns. Granularity follows the distance from today — see [timestamp granularity](#timestamp-granularity) |
 | `theme.expandHint` | `"plain"` | `key` underlines the `ctrl+o` keycap in expand hints; `plain` keeps the 0.4.x rendering |
 
@@ -129,7 +128,7 @@ Month and day are never zero padded (`11月15日`, not `11月05日`); the clock 
 
 `preset: "pi"` renders the colour layer through Pi's tokens. It does **not** by itself restore the 0.4.6 output: `dividers`, `gutter`, `userBar`, and `thinkingPeek.showCounts` also ship on. Set them off to get the old rendering, and note that a failed tool row's title resolves to `error` regardless. Slot values accept `#RRGGBB`, `oklch(...)`, `okhsl(...)`, or a Pi token name. An **unparseable colour** falls back to the slot's preset colour; an **unknown slot name** is dropped silently, so copy the names exactly.
 
-With `theme.dividers` on, the rule above the next user message carries the previous turn's telemetry as a label. The numbers travel inside a hidden marker prepended to that message, and the handoff is scoped to the `Markdown` instance that rendered the marker, so one instance's label cannot reach another instance's rule. A user message that itself contains a `---` line shows the label on both rules: Pi caches rendered blocks by `token.raw`, so the prepended rule and the author's own line share one decorated block.
+With `theme.dividers` on, heavy solid (`━`) or dashed (`╍`) rules fill the available message width and repaint when the terminal resizes; there is no 80-column limit. The rule before each later user message carries the previous turn's telemetry as a label. It is drawn as a separate component row, not inserted into the Markdown source. Repaints retain the label per message, while an authored `---` line remains its own ordinary Markdown rule without a duplicate label. The first user message in a session has no boundary rule. Completed assistant text answers have a separate rule between their thinking and final text; tool-use and in-progress messages do not.
 
 ### Context blocks
 Read-only linkage to `billion-context-pi`. See [context blocks](../README.md#context-blocks).
@@ -256,11 +255,10 @@ Pi 主题负责 Pi 本身；下列选项负责 open-tui 自己的区域。`prese
 | --- | --- | --- |
 | `theme.preset` | `"tokyo-night"` | `tokyo-night`、`catppuccin-mocha`、`gruvbox-dark`、`rose-pine-moon`，或 `pi` 表示使用 Pi 自己的 token |
 | `theme.slots` | `{}` | 按槽位覆盖颜色。十三个槽位、各自绘制对象及回退的 Pi token 见 [README 槽位表](../README.zh-CN.md#open-tui-自有配色) |
-| `theme.dividers` | `"line"` | `line`、`dashed` 或 `none`。轮次之间的分隔线；同一槽位也用于底栏分隔符 |
+| `theme.dividers` | `"line"` | `line`、`dashed` 或 `none`。在后续用户消息前及助手最终答案前（思考内容之后）独立绘制规则线，不插入 Markdown 或复制内容；同一槽位也用于底栏分隔符 |
 | `theme.gutter` | `true` | 命令输出左侧的竖线。只在紧凑工具视图（`toolView.mode: "compact"`）下才画出；未开紧凑时设置窗口会在该行后标注 `(需 compact)` |
 | `theme.banding` | `false` | 交替的工具行使用淡背景 |
 | `theme.userBar` | `true` | 用户消息左侧的彩色竖条 |
-| `theme.bubble` | `"rounded"` | 只包裹助手回复的圆角边框，取值为 `rounded` 或 `off`；每侧预留一个 `│` 加一列间隔，终端窄于 20 列、消息含图片或某行渲染后宽于内宽时回到无框渲染 |
 | `theme.timestamps` | `"all"` | 右对齐的时间戳：`all`（用户与助手）、`assistant`（仅助手）、`chinese`（两侧都给，中文措辞）或 `off`。时间取自消息自身的时间戳，消息没有时间戳时只取一次时钟快照。不新增行，窄于 24 列时跳过。粒度按距离今天远近选择——见[时间戳粒度](#时间戳粒度) |
 | `theme.expandHint` | `"plain"` | 设为 `key` 会给展开提示里的 `ctrl+o` 键幅加下划线；`plain` 保持 0.4.x 的渲染 |
 
@@ -281,7 +279,7 @@ Pi 主题负责 Pi 本身；下列选项负责 open-tui 自己的区域。`prese
 
 `preset: "pi"` 让颜色层走 Pi 的 token，但**单靠它并不能**恢复 0.4.6 的渲染：`dividers`、`gutter`、`userBar` 和 `thinkingPeek.showCounts` 也都默认开启。把这几项关掉才能回到旧渲染，并注意失败工具行的标题无论如何都会落到 `error`。槽位颜色接受 `#RRGGBB`、`oklch(...)`、`okhsl(...)` 或一个 Pi token 名。**无法解析的颜色**会回退到该预设的颜色；**未知槽位名会被静默丢弃**，请照抄名称。
 
-`theme.dividers` 开启时，下一条用户消息上方的规则会以标签形式带上一轮的遥测数字。数字藏在插入该消息 markdown 的隐藏标记里，交接绑定在渲染该标记的 `Markdown` 实例上，因此一个实例的标签不会跑到另一个实例的规则上。用户消息自身包含 `---` 行时，两条规则都会显示标签：Pi 按 `token.raw` 缓存渲染块，前置的规则和作者那行共用同一个装饰块。
+`theme.dividers` 开启时，粗实线（`━`）或粗虚线（`╍`）会填满消息的可用宽度，并随终端窗口缩放重绘，不再限制为 80 列。下一条用户消息前的独立分隔行会显示上一轮遥测标签。规则线不进入 Markdown 正文；每条消息独立保存指标以支持重新绘制。正文自带的 `---` 仍是普通 Markdown 分隔线，不会重复显示指标。每个会话的首条用户消息不加分隔线。助手完成的文字答复在思考内容与最终文本之间另绘一条线；工具调用和未完成的消息不绘此线。
 
 ### 上下文块
 
@@ -369,7 +367,6 @@ The complete default configuration is shared by both language references. Set `s
     "banding": false,
     "userBar": true,
     "expandHint": "plain",
-    "bubble": "rounded",
     "timestamps": "all"
   },
   "thinkingPeek": {

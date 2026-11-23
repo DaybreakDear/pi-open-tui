@@ -7,7 +7,9 @@ import {
 	type Theme,
 } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, visibleWidth, type MarkdownTheme } from "@earendil-works/pi-tui";
-import { installBubble } from "../extensions/open-tui/bubble.ts";
+import { installMarkdownSkin, resetMarkdownSkinSession } from "../extensions/open-tui/markdown-skin.ts";
+import { DEFAULT_CONFIG } from "../extensions/open-tui/config.ts";
+import { DEFAULT_COST } from "../extensions/open-tui/currency.ts";
 import { formatTimestamp, installTimestamps, TIMESTAMP_MIN_WIDTH } from "../extensions/open-tui/timestamps.ts";
 import type { ThemeConfig } from "../extensions/open-tui/theme.ts";
 
@@ -45,7 +47,6 @@ function config(overrides: Partial<ThemeConfig> = {}): ThemeConfig {
 		gutter: false,
 		banding: false,
 		userBar: true,
-		bubble: "off",
 		timestamps: "all",
 		...overrides,
 	};
@@ -166,23 +167,33 @@ test("T7.6 a user message is stamped on the reserved top blank row only", () => 
 	}
 });
 
-test("T7.7 inside the bubble the stamp rides the top border row", () => {
-	const bubble = installBubble({ theme: () => theme, config: () => current });
-	current = config({ bubble: "rounded" });
+test("T7.7 assistant stamps use Pi's native blank row, never a frame", () => {
+	current = config();
 	const cleanup = install();
 	try {
 		const expected = formatTimestamp(MS);
 		assert.ok(expected !== undefined);
 		const rows = assistant(MS).render(40);
-		const bare = stripTerminalSequences(rows[0]!);
-		// The rule takes whatever the label leaves of the inner width, so the stamp may grow freely.
-		const rules = 40 - 2 - (visibleWidth(expected) + 2);
-		assert.equal(bare, `╭${"─".repeat(rules)} ${expected} ╮`);
+		assert.ok(stripTerminalSequences(rows[0]!).startsWith(expected), rows[0]);
+		assert.ok(!rows.some((row) => stripTerminalSequences(row).includes("╭")));
 		for (const row of rows) assert.equal(visibleWidth(row), 40);
-	} finally {
-		cleanup?.();
-		bubble?.();
-	}
+	} finally { cleanup?.(); }
+});
+
+test("timestamps skip the standalone divider and stamp the user message's native blank row", () => {
+	initTheme();
+	resetMarkdownSkinSession();
+	current = config();
+	const skin = installMarkdownSkin({ theme: () => theme, config: () => current,
+		telemetrySettings: () => ({ config: DEFAULT_CONFIG.telemetry, iconMode: "unicode", cost: DEFAULT_COST }) });
+	const stamps = install();
+	try {
+		user(ISO).render(40);
+		const rows = user(ISO).render(40);
+		const expected = formatTimestamp(MS);
+		assert.ok(rows[0]?.includes("━━━") && !rows[0]?.includes(expected!));
+		assert.ok(stripTerminalSequences(rows[1]!).includes(expected!));
+	} finally { stamps?.(); skin?.(); }
 });
 
 // ---------------------------------------------------------------------------
@@ -309,34 +320,17 @@ test("T10.11 the grown stamp still fits 24 and 25 columns without overflow", () 
 	assert.ok(label !== undefined);
 	assert.equal(visibleWidth(label), 20, "fixture label width changed");
 
-	const widths = [TIMESTAMP_MIN_WIDTH, TIMESTAMP_MIN_WIDTH + 1];
-	const bubble = installBubble({ theme: () => theme, config: () => current });
-	try {
-		for (const width of widths) {
-			for (const style of ["off", "rounded"] as const) {
-				current = config({ bubble: style });
-				const cleanup = install();
-				try {
-					const assistantRows = assistant(undefined, stamp).render(width);
-					const userRows = user(stamp).render(width);
-					for (const row of [...assistantRows, ...userRows]) {
-						assert.ok(visibleWidth(row) <= width, `row overflows ${width} columns: ${JSON.stringify(row)}`);
-					}
-					// The stamp is placed, not dropped: a dropped stamp would be the cheap way to "fit".
-					assert.ok(
-						stripTerminalSequences(assistantRows[0]!).includes(label),
-						`no stamp at ${width} columns (bubble ${style}): ${JSON.stringify(assistantRows[0])}`,
-					);
-					assert.ok(
-						stripTerminalSequences(userRows[0]!).includes(label),
-						`no user stamp at ${width} columns: ${JSON.stringify(userRows[0])}`,
-					);
-				} finally {
-					cleanup?.();
-				}
+	for (const width of [TIMESTAMP_MIN_WIDTH, TIMESTAMP_MIN_WIDTH + 1]) {
+		current = config();
+		const cleanup = install();
+		try {
+			const assistantRows = assistant(undefined, stamp).render(width);
+			const userRows = user(stamp).render(width);
+			for (const row of [...assistantRows, ...userRows]) {
+				assert.ok(visibleWidth(row) <= width, `row overflows ${width} columns: ${JSON.stringify(row)}`);
 			}
-		}
-	} finally {
-		bubble?.();
+			assert.ok(stripTerminalSequences(assistantRows[0]!).includes(label));
+			assert.ok(stripTerminalSequences(userRows[0]!).includes(label));
+		} finally { cleanup?.(); }
 	}
 });

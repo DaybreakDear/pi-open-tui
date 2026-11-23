@@ -93,13 +93,17 @@ test("a non-finite poll interval falls back to the default", (t) => {
 test("malformed json keeps previous snapshot", async (t) => {
 	const { sessionFile } = sessionWithSidecar(t, sidecar(1));
 	const updates: (ContextBlocksSnapshot | undefined)[] = [];
-	const stop = watchContextBlocks(() => sessionFile, (snapshot) => updates.push(snapshot), 25);
+	const pollMs = 25;
+	const stop = watchContextBlocks(() => sessionFile, (snapshot) => updates.push(snapshot), pollMs);
 	t.after(stop);
 
 	await waitFor(() => updates.length >= 1, "watch callback must deliver the initial read");
 	const first = updates.at(-1);
 	assert.ok(first, "initial read must be a snapshot");
 	const before = updates.length;
+	// The initial callback is synchronous, but fs.watchFile establishes its stat
+	// baseline asynchronously. A rewrite before that baseline emits no event.
+	await delay(pollMs * 4);
 
 	// A half-written or corrupt sidecar must not blank the footer: the watch
 	// callback keeps handing back the last good snapshot.

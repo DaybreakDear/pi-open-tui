@@ -6,6 +6,7 @@ import test from "node:test";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
 	AssistantMessageComponent,
+	UserMessageComponent,
 	createEventBus,
 	type ExtensionAPI,
 	type ExtensionContext,
@@ -548,6 +549,8 @@ test("the settled numbers reach the next user divider and are coloured at render
 	openTui(pi);
 	t.after(() => void emit("session_shutdown", { type: "session_shutdown" }));
 	await emit("session_start", { type: "session_start" });
+	initTheme();
+	new UserMessageComponent("first prompt").render(120);
 	await emit("agent_start", { type: "agent_start" });
 	await emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: Date.now() });
 	await emit("message_start", { type: "message_start", message });
@@ -556,30 +559,15 @@ test("the settled numbers reach the next user divider and are coloured at render
 	await emit("turn_end", { type: "turn_end", turnIndex: 0, message, toolResults: [] });
 	await emit("agent_settled", { type: "agent_settled" });
 
-	// The user face transformer is the first one registered: the divider it emits carries the numbers.
-	const transform = transformers[0]!;
-	const source = transform("next prompt", { messageType: "user", isStreaming: false, availableWidth: 120 });
-	assert.ok(source.startsWith("<!--pi-turn:{"), source);
-
-	const instance = Object.create(Markdown.prototype) as {
-		theme: MarkdownTheme;
-		renderToken: (token: Token, width: number) => string[];
-	};
-	instance.theme = { hr: (text: string) => text } as unknown as MarkdownTheme;
-	const marker = /^<!--pi-turn:[\s\S]*?-->/.exec(source)![0];
-	const drawRule = (): string => {
-		instance.renderToken({ type: "html", raw: marker } as Token, 120);
-		return instance.renderToken({ type: "hr", raw: "---" } as Token, 120)[0]!;
-	};
-	const coolRow = drawRule();
-	// A theme switch after the settle: the label is formatted when the rule is drawn, so it follows.
+	// The user transformer leaves Markdown and the copy payload unchanged; the component owns the boundary.
+	assert.equal(transformers[0]!("next prompt", { messageType: "user", isStreaming: false, availableWidth: 120 }), "next prompt");
+	const next = new UserMessageComponent("next prompt");
+	const coolRow = next.render(120)[0]!;
 	(ctx.ui as unknown as { theme: Theme }).theme = warm;
-	const warmRow = drawRule();
-	// The numbers came out of the payload and were formatted here, not carried as pre-coloured text.
+	const warmRow = next.render(120)[0]!;
 	assert.match(coolRow, /TPS \d/, coolRow);
 	assert.ok(!coolRow.includes("{"), coolRow);
 	assert.ok(coolRow.includes("<accent>"), coolRow);
-	// Only the palette changed: the label was re-formatted for the warm theme.
 	assert.ok(warmRow.includes("[accent:"), warmRow);
 	assert.notEqual(coolRow, warmRow);
 });
@@ -656,12 +644,11 @@ test("open-tui keeps a bounded peek scoped to the current assistant", async () =
 	process.env.PI_CODING_AGENT_DIR = agentDir;
 	await writeFile(
 		join(agentDir, "open-tui.json"),
-		// The bubble's frame adds rows of its own (tests/bubble.test.ts); this fixture measures the
-		// hidden-thinking block, so it renders unframed.
+		// Measure the native hidden-thinking block at the transcript width.
 		JSON.stringify({
 			...DEFAULT_CONFIG,
 			thinkingPeek: { lines: 2 },
-			theme: { ...DEFAULT_CONFIG.theme, bubble: "off" },
+			theme: { ...DEFAULT_CONFIG.theme },
 		}),
 		"utf8",
 	);

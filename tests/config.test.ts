@@ -98,7 +98,6 @@ const DEFAULT_THEME = {
 	banding: false,
 	userBar: true,
 	expandHint: "plain" as const,
-	bubble: "rounded" as const,
 	timestamps: "all" as const,
 };
 
@@ -120,7 +119,6 @@ test("keeps a valid theme block", (t) => {
 		banding: true,
 		userBar: true,
 		expandHint: "plain",
-		bubble: "rounded",
 		timestamps: "all",
 	});
 });
@@ -139,7 +137,7 @@ test("falls back per field on invalid theme values", (t) => {
 	assert.equal(config.theme.gutter, DEFAULT_THEME.gutter);
 	assert.equal(config.theme.banding, DEFAULT_THEME.banding);
 	assert.equal(config.theme.expandHint, DEFAULT_THEME.expandHint);
-	assert.equal(config.theme.bubble, DEFAULT_THEME.bubble);
+	assert.ok(!Object.hasOwn(config.theme, "bubble"), "obsolete bubble setting is dropped on load");
 	assert.equal(config.theme.timestamps, DEFAULT_THEME.timestamps);
 
 	const nullPreset = configWith(t, { theme: { preset: null, slots: null } });

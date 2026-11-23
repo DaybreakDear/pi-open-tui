@@ -5,7 +5,6 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_CONFIG } from "../extensions/open-tui/config.ts";
 import {
-	BUBBLE_STYLES,
 	DIVIDER_STYLES,
 	EXPAND_HINTS,
 	SLOT_NAMES,
@@ -111,7 +110,6 @@ function rowFor(markdown: string, key: string, group: string): string | undefine
 
 for (const file of [...READMES, "docs/configuration.md"]) {
 	for (const [group, key, accepted] of [
-		["theme", "bubble", BUBBLE_STYLES],
 		["theme", "timestamps", TIMESTAMP_MODES],
 	] as const) {
 		test(`${file} documents exactly the accepted ${key} values`, () => {

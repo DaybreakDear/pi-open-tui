@@ -46,7 +46,7 @@ Both sides share the available row width. Shorter, nonempty `compactText` forms 
 2. On a new available lifecycle, publish current content using that identifier. It identifies the current footer mount, not a protocol version. Disabling open-tui, replacing its footer or ending the session invalidates it and clears contributions.
 3. For asynchronous data, capture the lifecycle before the request and discard obsolete results. If data depends on a provider/model, also compare that identity and a request sequence. Stop pending work on shutdown; never publish through a Pi instance whose runtime has been replaced.
 
-`footerSegments.extensionSegments` defaults to `true` and controls visibility only: hidden entries still receive updates, and availability and lifecycle stay unchanged. `footerSegments.extensionStatuses` separately controls normal `ctx.ui.setStatus()` rows. A contributor can use those rows as fallback while unavailable, clearing its own fallback when publishing a footer segment.
+`footerSegments.extensionSegments` defaults to `true` and controls visibility only: hidden entries still receive updates, and availability and lifecycle stay unchanged. `footerSegments.extensionStatuses` separately controls normal `ctx.ui.setStatus()` rows (including sandbox extensions' enabled/disabled indicators), preserving ANSI colours while removing terminal-control sequences. A contributor can use those rows as fallback while unavailable, clearing its own fallback when publishing a footer segment.
 
 ## System memory example
 

@@ -16,7 +16,7 @@ import {
 } from "@earendil-works/pi-tui";
 import type { CursorStyle, IconMode, OpenTuiConfig, SettingsLanguage, ThinkingPeekLines } from "./config.ts";
 import { currencySymbol, RATE_STEPS } from "./currency.ts";
-import { BUBBLE_STYLES, DIVIDER_STYLES, THEME_PRESETS, TIMESTAMP_MODES } from "./theme.ts";
+import { DIVIDER_STYLES, THEME_PRESETS, TIMESTAMP_MODES } from "./theme.ts";
 import { PRESET_LABELS, ThemePreviewPage } from "./theme-preview.ts";
 
 interface SettingItem {
@@ -102,7 +102,6 @@ const COPY = {
 			gutter: "Tool gutter",
 			banding: "Row banding",
 			userBar: "User message rail",
-			bubble: "Assistant bubble",
 			timestamps: "Message timestamps",
 		},
 		values: {
@@ -116,7 +115,6 @@ const COPY = {
 			currencies: { usd: `USD ${currencySymbol("usd")}`, cny: `CNY ${currencySymbol("cny")}` },
 			open: "Open",
 			dividers: { none: "None", line: "Line", dashed: "Dashed" },
-			bubbles: { rounded: "Rounded", off: "Off" },
 			timestamps: { all: "All", assistant: "Assistant", chinese: "Chinese", off: "Off" },
 		},
 		notices: {
@@ -187,7 +185,6 @@ const COPY = {
 			gutter: "工具竖线",
 			banding: "行底色",
 			userBar: "用户消息竖条",
-			bubble: "助手气泡",
 			timestamps: "消息时间戳",
 		},
 		values: {
@@ -201,7 +198,6 @@ const COPY = {
 			currencies: { usd: `美元 ${currencySymbol("usd")}`, cny: `人民币 ${currencySymbol("cny")}` },
 			open: "打开",
 			dividers: { none: "无", line: "实线", dashed: "虚线" },
-			bubbles: { rounded: "圆角", off: "关闭" },
 			timestamps: { all: "全部", assistant: "仅助手", chinese: "中文", off: "关闭" },
 		},
 		notices: {
@@ -317,12 +313,6 @@ function cycleDividers(config: OpenTuiConfig): OpenTuiConfig {
 	return { ...config, theme: { ...config.theme, dividers: next } };
 }
 
-function cycleBubble(config: OpenTuiConfig): OpenTuiConfig {
-	const currentIdx = BUBBLE_STYLES.indexOf(config.theme.bubble ?? "rounded");
-	const next = BUBBLE_STYLES[(currentIdx + 1) % BUBBLE_STYLES.length]!;
-	return { ...config, theme: { ...config.theme, bubble: next } };
-}
-
 function cycleTimestamps(config: OpenTuiConfig): OpenTuiConfig {
 	const currentIdx = TIMESTAMP_MODES.indexOf(config.theme.timestamps ?? "all");
 	const next = TIMESTAMP_MODES[(currentIdx + 1) % TIMESTAMP_MODES.length]!;
@@ -359,7 +349,6 @@ function buildIconsItems(config: OpenTuiConfig, copy: SettingsCopy): SettingGrou
 				{ id: "themeGutter", label: gutterNeedsCompact ? `${copy.labels.gutter} ${copy.hints.gutterNeedsCompact}` : copy.labels.gutter, currentValue: flag(config.theme.gutter) },
 				{ id: "themeBanding", label: copy.labels.banding, currentValue: flag(config.theme.banding) },
 				{ id: "themeUserBar", label: copy.labels.userBar, currentValue: flag(config.theme.userBar) },
-				{ id: "themeBubble", label: copy.labels.bubble, currentValue: copy.values.bubbles[config.theme.bubble ?? "rounded"] },
 				{ id: "themeTimestamps", label: copy.labels.timestamps, currentValue: copy.values.timestamps[config.theme.timestamps ?? "all"] },
 				// Message rendering sits with the other visual rows; it used to be on General, where
 				// nobody looked for it.
@@ -489,7 +478,6 @@ function handleSettingChange(
 		if (itemId === "themeGutter") return { ...config, theme: { ...config.theme, gutter: !config.theme.gutter } };
 		if (itemId === "themeBanding") return { ...config, theme: { ...config.theme, banding: !config.theme.banding } };
 		if (itemId === "themeUserBar") return { ...config, theme: { ...config.theme, userBar: !config.theme.userBar } };
-		if (itemId === "themeBubble") return cycleBubble(config);
 		if (itemId === "themeTimestamps") return cycleTimestamps(config);
 		if (itemId === "thinkingPeek") return cycleThinkingPeek(config);
 		if (itemId === "thinkingPeekCounts") {

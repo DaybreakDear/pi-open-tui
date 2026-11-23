@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { MarkdownTransformContext, Theme } from "@earendil-works/pi-coding-agent";
-import { Markdown, type MarkdownTheme, type Token } from "@earendil-works/pi-tui";
+import { initTheme, UserMessageComponent, type MarkdownTransformContext, type Theme } from "@earendil-works/pi-coding-agent";
+import { Markdown, stripTerminalSequences, type MarkdownTheme, type Token } from "@earendil-works/pi-tui";
 import {
 	appendThinkingStats,
 	createThinkingStatsLedger,
@@ -14,6 +14,7 @@ import {
 	installMarkdownSkin,
 	markSkinScope,
 	resetMarkdownSkinSession,
+	userDividerRowCount,
 } from "../extensions/open-tui/markdown-skin.ts";
 import type { ThemeConfig } from "../extensions/open-tui/theme.ts";
 import { createPainter } from "../extensions/open-tui/theme.ts";
@@ -235,8 +236,8 @@ const TURN: TurnTelemetry = {
 	measurementMs: 28_000,
 };
 /**
- * Duration only: the rule caps at 80 columns and the mock theme's tags count as visible width, so the
- * label has to stay short to be asserted whole instead of clipped.
+ * Duration only: the mock theme's tags count as visible width, so the label stays short enough
+ * to be asserted whole instead of clipped.
  */
 const TURN_CONFIG = { ...DEFAULT_CONFIG.telemetry, tps: false, ttft: false, tokens: false, stalls: false, cost: false };
 
@@ -279,15 +280,15 @@ const divide = (instance: typeof markdownProto, source: string, width: number): 
 test("T5b.1 the next user divider carries the settled turn metrics", () => {
 	const cleanup = startSkin();
 	try {
-		assert.equal(markSkinScope("first", userContext), "first");
+		initTheme();
+		new UserMessageComponent("first").render(120);
 		pending = payloadOf(TURN);
-		const source = markSkinScope("second", userContext);
-		// The marker carries the numbers, not a pre-coloured label: the colour is chosen at render.
-		assert.ok(source.startsWith("<!--pi-turn:{"), source);
-		assert.ok(source.endsWith("second"), source);
-		const [row] = divide(markdownInstance(), source, 120);
+		const second = new UserMessageComponent("second");
+		const [row] = second.render(120);
 		assert.ok(row?.includes(labelFor(theme)), row);
 		assert.ok(row?.includes("29.7s"), row);
+		assert.equal(userDividerRowCount(second), 1);
+		assert.equal(markSkinScope("second", userContext), "second");
 	} finally {
 		cleanup?.();
 	}
@@ -296,12 +297,12 @@ test("T5b.1 the next user divider carries the settled turn metrics", () => {
 test("T5b.2 the summary is consumed once: the following message keeps a bare divider", () => {
 	const cleanup = startSkin();
 	try {
-		markSkinScope("first", userContext);
+		initTheme();
+		new UserMessageComponent("first").render(120);
 		pending = payloadOf(TURN);
-		assert.ok(markSkinScope("second", userContext).includes("29700"));
-		// A second message without a new settle gets the plain divider source, byte for byte.
-		assert.equal(markSkinScope("third", userContext), "---\n\nthird");
-		assert.equal(markSkinScope("fourth", userContext), "---\n\nfourth");
+		assert.ok(new UserMessageComponent("second").render(120)[0]?.includes("29.7s"));
+		assert.equal(pending, undefined);
+		assert.ok(!new UserMessageComponent("third").render(120)[0]?.includes("29.7s"));
 	} finally {
 		cleanup?.();
 	}
@@ -310,10 +311,10 @@ test("T5b.2 the summary is consumed once: the following message keeps a bare div
 test("T5b.3 with no prior telemetry the divider is just the rule", () => {
 	const cleanup = startSkin();
 	try {
-		markSkinScope("first", userContext);
-		const source = markSkinScope("second", userContext);
-		assert.equal(source, "---\n\nsecond");
-		assert.deepEqual(divide(markdownInstance(), source, 40), ["<dim>────────────────────────────────────────</dim>"]);
+		initTheme();
+		new UserMessageComponent("first").render(40);
+		const second = new UserMessageComponent("second");
+		assert.equal(stripTerminalSequences(second.render(40)[0] ?? ""), `<dim>${"━".repeat(40)}</dim>`);
 	} finally {
 		cleanup?.();
 	}
@@ -322,12 +323,10 @@ test("T5b.3 with no prior telemetry the divider is just the rule", () => {
 test("T5b.4 telemetry off leaves the divider bare (the notify guard is upstream)", () => {
 	const cleanup = startSkin();
 	try {
-		markSkinScope("first", userContext);
-		// `agent_settled` only stores a summary behind `config.telemetry.enabled`, so the consumer
-		// yields nothing and the divider must not fabricate numbers.
-		const source = markSkinScope("second", userContext);
-		assert.equal(source, "---\n\nsecond");
-		assert.ok(!divide(markdownInstance(), source, 80)[0]?.includes("tps"));
+		initTheme();
+		new UserMessageComponent("first").render(80);
+		// The upstream notify guard left no summary; the boundary cannot fabricate numbers.
+		assert.ok(!new UserMessageComponent("second").render(80)[0]?.includes("tps"));
 	} finally {
 		cleanup?.();
 	}
@@ -336,10 +335,14 @@ test("T5b.4 telemetry off leaves the divider bare (the notify guard is upstream)
 test("T5b.5 replaying history without a settle injects no stale numbers", () => {
 	const cleanup = startSkin();
 	try {
-		// Replaying an old transcript: three user faces, no `agent_settled` in between.
-		assert.equal(markSkinScope("old one", userContext), "old one");
-		assert.equal(markSkinScope("old two", userContext), "---\n\nold two");
-		assert.equal(markSkinScope("old three", userContext), "---\n\nold three");
+		initTheme();
+		// Replaying history without agent_settled keeps the later boundaries bare.
+		assert.equal(userDividerRowCount(new UserMessageComponent("old one")), 0);
+		new UserMessageComponent("old one").render(80);
+		for (const text of ["old two", "old three"]) {
+			const message = new UserMessageComponent(text);
+			assert.ok(!message.render(80)[0]?.includes("29.7s"));
+		}
 	} finally {
 		cleanup?.();
 	}
@@ -348,17 +351,12 @@ test("T5b.5 replaying history without a settle injects no stale numbers", () => 
 test("a decorated divider survives a re-render at another width", () => {
 	const cleanup = startSkin();
 	try {
-		markSkinScope("first", userContext);
+		initTheme();
+		new UserMessageComponent("first").render(120);
 		pending = payloadOf(TURN);
-		const first = markSkinScope("second", userContext);
-		// Resize/theme switch re-renders from the same source text: the label must not vanish
-		// because the one-shot summary was already consumed by the first render.
-		assert.equal(markSkinScope("second", userContext), first);
-		const instance = markdownInstance();
-		const [narrow] = divide(instance, first, 120);
-		assert.ok(narrow?.includes(labelFor(theme)), narrow);
-		const [wide] = divide(instance, first, 160);
-		assert.ok(wide?.includes(labelFor(theme)));
+		const second = new UserMessageComponent("second");
+		assert.ok(second.render(120)[0]?.includes(labelFor(theme)));
+		assert.ok(second.render(160)[0]?.includes(labelFor(theme)));
 	} finally {
 		cleanup?.();
 	}
@@ -373,13 +371,13 @@ test("a theme switch repaints the label instead of keeping the settle-time colou
 	} as unknown as Theme;
 	const cleanup = startSkin();
 	try {
-		markSkinScope("first", userContext);
+		initTheme();
+		new UserMessageComponent("first").render(160);
 		pending = payloadOf(TURN);
-		const source = markSkinScope("second", userContext);
-		const instance = markdownInstance();
-		const [cool] = divide(instance, source, 160);
+		const second = new UserMessageComponent("second");
+		const [cool] = second.render(160);
 		activeTheme = warm;
-		const [repainted] = divide(instance, source, 160);
+		const [repainted] = second.render(160);
 		assert.ok(cool?.includes(labelFor(theme)), cool);
 		assert.ok(repainted?.includes(labelFor(warm)), repainted);
 		assert.notEqual(cool, repainted);
@@ -393,7 +391,7 @@ test("a marker payload that does not parse is treated as absent", () => {
 	try {
 		const instance = markdownInstance();
 		instance.renderToken?.({ type: "html", raw: "<!--pi-turn:{not json-->" } as Token, 60);
-		assert.deepEqual(rule(instance, 40), ["<dim>────────────────────────────────────────</dim>"]);
+		assert.deepEqual(rule(instance, 40), [`<dim>${"━".repeat(40)}</dim>`]);
 	} finally {
 		cleanup?.();
 	}
@@ -404,16 +402,16 @@ test("a label wider than the rule is clipped, and a rule too narrow drops it", (
 	try {
 		// The full palette of numbers: long enough that a 20-column rule cannot hold it.
 		settings = { config: DEFAULT_CONFIG.telemetry, iconMode: "unicode", cost: DEFAULT_COST };
-		markSkinScope("first", userContext);
+		initTheme();
+		new UserMessageComponent("first").render(120);
 		pending = payloadOf(TURN);
-		const source = markSkinScope("second", userContext);
-		const instance = markdownInstance();
+		const second = new UserMessageComponent("second");
 		const label = labelFor(theme, DEFAULT_CONFIG.telemetry);
-		const [narrow] = divide(instance, source, 20);
+		const [narrow] = second.render(20);
 		assert.ok(narrow !== undefined);
 		assert.ok(!narrow.includes(label), narrow);
-		const [tiny] = divide(instance, source, 6);
-		assert.equal(tiny, "<dim>──────</dim>");
+		const [tiny] = second.render(6);
+		assert.equal(stripTerminalSequences(tiny ?? ""), "<dim>━━━━━━</dim>");
 	} finally {
 		cleanup?.();
 	}

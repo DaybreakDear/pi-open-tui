@@ -30,8 +30,6 @@ export type DividerStyle = "none" | "line" | "dashed";
  */
 export type ExpandHint = "plain" | "key";
 
-export type BubbleStyle = "rounded" | "off";
-
 /**
  * `assistant` stamps replies only; `chinese` stamps both sides and shares `all`'s wording today, but is
  * a single value for users who do not want to reason about `all` vs `assistant`; `off` paints nothing.
@@ -47,13 +45,11 @@ export interface ThemeConfig {
 	banding: boolean;
 	/**
 	 * Left rail (`▌ `) on user messages. It is prepended at render time, so the message text — the
-	 * `[Copy]` payload — never contains the glyph. `false` keeps the v0.4.6 bubble.
+	 * `[Copy]` payload — never contains the glyph.
 	 */
 	userBar: boolean;
 	/** Absent behaves like `"plain"`, so a literal without the key renders the v0.4.6 hint. */
 	expandHint?: ExpandHint;
-	/** Rounded frame around assistant replies. Absent behaves like `"rounded"`; `"off"` renders unpatched. */
-	bubble?: BubbleStyle;
 	/** Date + `HH:MM` stamps on messages. Absent behaves like `"all"`; `"off"` renders unpatched. */
 	timestamps?: TimestampMode;
 }
@@ -79,8 +75,6 @@ export const THEME_PRESETS: readonly ThemePreset[] = ["pi", "tokyo-night", "catp
 export const DIVIDER_STYLES: readonly DividerStyle[] = ["none", "line", "dashed"];
 
 export const EXPAND_HINTS: readonly ExpandHint[] = ["plain", "key"];
-
-export const BUBBLE_STYLES: readonly BubbleStyle[] = ["rounded", "off"];
 
 export const TIMESTAMP_MODES: readonly TimestampMode[] = ["all", "assistant", "chinese", "off"];
 
@@ -108,7 +102,7 @@ export const SLOT_TOKEN: Record<SlotName, ThemeColor> = {
  * Preset colours come from the palette in `themes/<preset>.json`. toolTitle, toolOutput, command
  * and cost mirror the tokens those themes already set; toolCall and userBar sit next to them in the
  * same palette. divider and gutter take the palette's `muted` tier instead of the theme's own `mdHr` /
- * rule colour: those sit at 1.1–1.9:1 on the bubble and tool backgrounds, so the turn rule and the
+ * rule colour: those sit at 1.1–1.9:1 on the message and tool backgrounds, so the turn rule and the
  * compact gutter were invisible (measured in tests/contrast.test.ts, which now holds them at ≥ 3:1).
  * The two slots never touch each other, so they share one colour.
  */
@@ -167,7 +161,6 @@ export const PI_THEME_CONFIG: ThemeConfig = {
 	gutter: true,
 	banding: false,
 	userBar: true,
-	bubble: "rounded",
 	timestamps: "all",
 };
 

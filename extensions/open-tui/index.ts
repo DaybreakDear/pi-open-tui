@@ -2,7 +2,6 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { TuiMouseEvent } from "@earendil-works/pi-tui";
 import { type OpenTuiConfig, DEFAULT_CONFIG, ensureConfigExists, loadConfig, saveConfig } from "./config.ts";
 import { installCopyButtons, markCopyScope } from "./copy-buttons.ts";
-import { installBubble } from "./bubble.ts";
 import { installTimestamps } from "./timestamps.ts";
 import { installMarkdownSkin, markSkinScope, resetMarkdownSkinSession } from "./markdown-skin.ts";
 import { installEditor } from "./editor.ts";
@@ -86,7 +85,6 @@ export default function (pi: ExtensionAPI) {
 	let editor: ReturnType<typeof installEditor> | undefined;
 	let copyButtons: ReturnType<typeof installCopyButtons> | undefined;
 	let cleanupMarkdownSkin: (() => void) | undefined;
-	let cleanupBubble: (() => void) | undefined;
 	let cleanupTimestamps: (() => void) | undefined;
 	let pendingUiChange: PendingUiChange | undefined;
 	// Set while the theme preview page is open: `session_shutdown` can arrive with a preview on screen.
@@ -324,9 +322,7 @@ export default function (pi: ExtensionAPI) {
 				getTheme: () => ctx.ui.theme,
 				isEnabled: () => config.copyButtons,
 			});
-			// Installed after the skin and the copy buttons so the frame wraps their output, and
-			// after the bubble so a stamp can ride the frame's own top border.
-			cleanupBubble = installBubble({ theme: () => ctx.ui.theme, config: () => config.theme });
+			// Timestamp and divider are component rows outside the source Markdown and copy payload.
 			cleanupTimestamps = installTimestamps({ theme: () => ctx.ui.theme, config: () => config.theme });
 			active = true;
 			if (requestFooterRender) footerSegments.activate();
@@ -341,13 +337,11 @@ export default function (pi: ExtensionAPI) {
 		if (active) {
 			cleanupHeader?.();
 			cleanupFooter?.();
-			// Reverse of the install order: timestamps, bubble, copy buttons, markdown skin.
+			// Reverse of the install order: timestamps, copy buttons, markdown skin.
 			cleanupTimestamps?.();
-			cleanupBubble?.();
 			copyButtons?.cleanup();
 			cleanupMarkdownSkin?.();
 			cleanupTimestamps = undefined;
-			cleanupBubble = undefined;
 			cleanupMarkdownSkin = undefined;
 			editor?.cleanup();
 			cleanupHeader = undefined;

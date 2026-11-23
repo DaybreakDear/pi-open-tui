@@ -44,7 +44,7 @@ export function previewConfig(config: OpenTuiConfig, preset: ThemePreset): OpenT
 
 /**
  * What Enter persists: the snapshot taken when the page opened, with only the preset replaced. Every
- * later-added switch (dividers, gutter, banding, userBar, bubble, timestamps) and the user's own slot
+ * later-added switch (dividers, gutter, banding, userBar, timestamps) and the user's own slot
  * overrides therefore survive, and `pi` really is the full restore it claims to be.
  */
 export function appliedConfig(config: OpenTuiConfig, preset: ThemePreset): OpenTuiConfig {

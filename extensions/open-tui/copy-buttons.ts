@@ -440,7 +440,7 @@ export function installCopyButtons(options: {
 				userRegions.delete(this);
 				return lines;
 			}
-			// The last row is the bubble's bottom padding, so the label never shares a row with a code-block label.
+			// The last row is the user message's bottom padding, so the label never shares a row with a code-block label.
 			const row = lines.length - 1;
 			const theme = options.getTheme();
 			const button = theme.bg("userMessageBg", label());

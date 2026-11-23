@@ -1,77 +1,45 @@
-import { UserMessageComponent, type MarkdownTransformContext, type Theme } from "@earendil-works/pi-coding-agent";
+import { AssistantMessageComponent, UserMessageComponent, type MarkdownTransformContext, type Theme } from "@earendil-works/pi-coding-agent";
 import { Markdown, truncateToWidth, visibleWidth, type MarkdownTheme, type Token } from "@earendil-works/pi-tui";
 import type { IconMode, TelemetryConfig } from "./config.ts";
 import type { CostConfig } from "./currency.ts";
 import { formatTurnTelemetry, parseTurnTelemetry, type TurnTelemetry } from "./telemetry.ts";
 import { createPainter, type Painter, type ThemeConfig } from "./theme.ts";
-import { lruGet, lruSet } from "./utils.ts";
 
-/**
- * Independent from `pi-open-tui.copy-buttons`: two patches guard on their own key, so the install
- * order (`markdown-skin` first, `copy-buttons` second) is what makes the reverse cleanup restore the
- * original methods. See `installCopyButtons`.
- */
 const PATCH_KEY = Symbol.for("pi-open-tui.markdown-skin");
-
-/** Pi caps horizontal rules at 80 columns (`Markdown.renderToken`, `case "hr"`); mirror it. */
-const HR_MAX_WIDTH = 80;
-const LINE_GLYPH = "─";
-const DASHED_GLYPH = "╌";
-const DIVIDER_TEXT = "---";
-/**
- * Turn metrics ride to the rule inside an HTML comment: the source markdown is what Pi caches, so a
- * re-render (resize, theme switch) reproduces the decorated divider instead of losing the numbers.
- * The rule patch swallows the token, so nothing of it reaches the screen.
- */
-const TURN_MARKER_OPEN = "<!--pi-turn:";
-const TURN_MARKER_CLOSE = "-->";
-/**
- * The marker carries the plain numbers, not a coloured label: `formatTurnTelemetry` runs at render
- * time, so a theme switch repaints the label with the rule instead of keeping the settle-time palette.
- */
-const MARKER_NEWLINES = /[\r\n]/g;
-/** Bracket columns around the label: `┤ ` and ` ├`. */
+const LINE_GLYPH = "━";
+const DASHED_GLYPH = "╍";
 const TURN_BRACKET_COLUMNS = 4;
-/** Rule columns kept on each side before the label is clipped instead of dropped. */
 const TURN_MIN_RULE = 2;
-/** `▌` plus its column gap: the rail is prepended outside the width Pi budgeted for the text. */
 const USER_BAR_GLYPH = "▌";
-/**
- * Both caches are bounded: replayed history is unbounded in principle, and every entry holds a full
- * message text plus a marker payload.
- */
-const DIVIDER_LABEL_CAP = 256;
-/**
- * Measured, not hardcoded: `U+258C` is East Asian Ambiguous, so a terminal configured for
- * ambiguous-wide columns draws the rail two columns wide and the hardcoded 2 overflowed by one.
- */
 const USER_BAR_COLUMNS = visibleWidth(`${USER_BAR_GLYPH} `);
 
-/** Pi's private `Markdown` fields; checked at runtime because they can change between releases. */
 interface MarkdownInternals {
 	theme: MarkdownTheme;
 	renderToken(token: Token, width: number, nextTokenType?: string, styleContext?: unknown): string[];
 }
 
-/** Only `render` is wrapped; `text`, the copy payload, is deliberately left alone. */
 interface UserMessageInternals {
 	render(width: number): string[];
+	children: unknown[];
 }
 
-/**
- * The skin reads its inputs lazily: a theme switch or a `/open-tui` settings write must change the
- * next render without reinstalling the prototype patch (reinstalling would break the fixed order).
- */
+interface AssistantMessageInternals {
+	render(width: number): string[];
+	contentContainer: { children: unknown[] };
+	markdownSlots: { kind: string; markdown: unknown }[];
+	lastMessage?: { stopReason?: string };
+	hasToolCalls: boolean;
+	isStreaming: boolean;
+}
+
 export interface MarkdownSkinSource {
 	theme: () => Theme;
 	config: () => ThemeConfig;
-	/** Reads and clears the turn metrics `agent_settled` left for the next user divider. */
+	/** The metrics left by agent_settled for the next user message. */
 	consumeTurnSummary?: () => string | undefined;
-	/** Read at render time, not at settle time: the label must use the palette in force when it is drawn. */
 	telemetrySettings: () => TurnTelemetrySettings;
 }
 
-/** Everything `formatTurnTelemetry` needs besides the numbers themselves. */
 export interface TurnTelemetrySettings {
 	config: TelemetryConfig;
 	iconMode: IconMode;
@@ -79,165 +47,184 @@ export interface TurnTelemetrySettings {
 }
 
 let source: MarkdownSkinSource | undefined;
-/**
- * The first user message of a session stays unruled; keyed by source text because the transform gets no
- * message identity. A later message with the same text is a message like any other — see `markSkinScope`.
- */
-let firstUserText: string | undefined;
-/**
- * Payload each user message already carried, keyed by source text for the same reason `firstUserText` is:
- * the transform gets no message identity. Without it a re-render would lose metrics the pending summary
- * can only hand out once. A repeated identical prompt reuses the earlier payload — the price of stability.
- */
-const dividerLabels = new Map<string, string>();
-/**
- * The numbers a marker token just handed to the rule that follows it. Keyed by the `Markdown` instance,
- * because `this` inside `renderToken` is that instance: a marker whose rule never renders must not leak
- * its label into an unrelated `Markdown` that draws someone else's `---` later.
- */
-let renderedDividerTelemetry = new WeakMap<object, TurnTelemetry>();
+let firstUser: object | undefined;
+let boundaries = new WeakMap<object, { telemetry?: TurnTelemetry }>();
+let dividerRows = new WeakMap<object, number>();
 
-/** Called on `session_start`: the divider belongs between messages, not above the first one. */
+/** Session boundaries reset the first-user exemption and all per-message render state. */
 export function resetMarkdownSkinSession(): void {
-	firstUserText = undefined;
-	dividerLabels.clear();
-	renderedDividerTelemetry = new WeakMap<object, TurnTelemetry>();
+	firstUser = undefined;
+	boundaries = new WeakMap();
+	dividerRows = new WeakMap();
 }
 
-/**
- * `user` face transformer: Pi runs it before its native block cache, and the divider only prepends
- * source markdown — `UserMessageComponent.text` keeps the original text, so copying is unaffected.
- */
-export function markSkinScope(markdown: string, context: MarkdownTransformContext): string {
-	if (!source || context.messageType !== "user" || source.config().dividers === "none") return markdown;
-	// Consume up front: a summary that finds no divider here must never stay pending for an unrelated
-	// later message.
-	const consumed = source.consumeTurnSummary?.();
-	const first = firstUserText === undefined;
-	if (first) firstUserText = markdown;
-	// The ruling exception is one message wide. Re-rendering the first message (resize, theme switch)
-	// passes the same text with no summary, which is the only signal a stateless transform has; a new
-	// prompt that repeats the first text carries its own summary and is ruled like any other message.
-	if (markdown === firstUserText && consumed === undefined) return markdown;
-	return dividerSource(markdown, consumed);
+/** A boundary is a component row, never part of the source Markdown or its copy payload. */
+export function markSkinScope(markdown: string, _context: MarkdownTransformContext): string {
+	return markdown;
 }
 
-/**
- * `───┤ 12.3s · 4.5k tok ├──`: the rule keeps the `divider` slot colour, the label keeps its own metrics
- * styling. A label with no room left is clipped; a rule too narrow for brackets degrades to the bare rule.
- */
+/** Used by the timestamp wrapper, which is installed outside the user-message skin. */
+export function userDividerRowCount(component: object): number {
+	return dividerRows.get(component) ?? 0;
+}
+
 function decorateRule(paint: (text: string) => string, glyph: string, total: number, label: string): string {
 	const room = total - TURN_BRACKET_COLUMNS - TURN_MIN_RULE;
 	if (room < 1) return paint(glyph.repeat(total));
 	const clipped = visibleWidth(label) > room ? truncateToWidth(label, room, "…") : label;
 	const inner = visibleWidth(clipped) + TURN_BRACKET_COLUMNS;
 	const left = Math.floor((total - inner) / 2);
-	return `${paint(`${glyph.repeat(left)}┤ `)}${clipped}${paint(` ├${glyph.repeat(total - inner - left)}`)}`;
+	return `${paint(`${glyph.repeat(left)}┫ `)}${clipped}${paint(` ┣${glyph.repeat(total - inner - left)}`)}`;
 }
 
-/** Prepends the divider, carrying this message's turn metrics when it has any. */
-function dividerSource(markdown: string, consumed: string | undefined): string {
-	// A cache hit is still overwritten by the current summary: the numbers on screen must describe the
-	// turn that just finished, and the summary must never be left unconsumed.
-	const label = consumed ?? lruGet(dividerLabels, markdown);
-	if (label === undefined) return `${DIVIDER_TEXT}\n\n${markdown}`;
-	lruSet(dividerLabels, markdown, label, DIVIDER_LABEL_CAP);
-	return `${TURN_MARKER_OPEN}${label}${TURN_MARKER_CLOSE}\n\n${DIVIDER_TEXT}\n\n${markdown}`;
-}
-
-/**
- * The raw payload of our marker token, or `undefined` when the token is not ours. The marker is an
- * unvalidated text channel, so newlines are stripped before use: one would split the rule in two.
- */
-function markerPayload(token: Token): string | undefined {
-	if (token.type !== "html" || typeof token.raw !== "string") return undefined;
-	if (!token.raw.startsWith(TURN_MARKER_OPEN) || !token.raw.endsWith(TURN_MARKER_CLOSE)) return undefined;
-	return token.raw.slice(TURN_MARKER_OPEN.length, -TURN_MARKER_CLOSE.length).replace(MARKER_NEWLINES, "");
-}
-
-/** Formats the numbers with the palette in force right now, not the one that was active at settle time. */
 function formatLabel(telemetry: TurnTelemetry, current: MarkdownSkinSource, painter: Painter): string {
 	const settings = current.telemetrySettings();
 	return formatTurnTelemetry(telemetry, current.theme(), settings.config, settings.iconMode, settings.cost, painter);
 }
 
-/**
- * Wraps `Markdown.prototype.renderToken` so a horizontal rule is drawn from the `divider` slot.
- * Returns `undefined` when the prototype lacks the hook (silent degradation) or is already patched.
- */
+/** Keep normal author-written Markdown HRs styled; do not treat them as conversation boundaries. */
 export function installMarkdownSkin(next: MarkdownSkinSource): (() => void) | undefined {
 	const markdownProto = Markdown.prototype as unknown as MarkdownInternals & Record<symbol, unknown>;
 	if (typeof markdownProto.renderToken !== "function" || markdownProto[PATCH_KEY]) return undefined;
 
 	const originalRenderToken = markdownProto.renderToken;
+	let installed = true;
 	source = next;
-
 	const patched = function (this: MarkdownInternals, token: Token, width: number, nextTokenType?: string,
 		styleContext?: unknown): string[] {
 		const current = source;
 		const style = current?.config().dividers ?? "none";
-		// The marker is ours: swallow it and hand its numbers to the rule rendered right after it.
-		// With dividers off we do not own this channel, so a user-pasted marker stays byte-identical.
-		const payload = current && style !== "none" ? markerPayload(token) : undefined;
-		if (payload !== undefined) {
-			const telemetry = parseTurnTelemetry(payload);
-			// An unparseable payload is treated as absent: a bare rule is honest, a fabricated one is not.
-			if (telemetry !== undefined) renderedDividerTelemetry.set(this, telemetry);
-			return [];
-		}
 		if (!current || token.type !== "hr" || style === "none") {
 			return originalRenderToken.call(this, token, width, nextTokenType, styleContext);
 		}
 		const painter = createPainter(current.theme(), current.config());
 		const glyph = style === "dashed" ? DASHED_GLYPH : LINE_GLYPH;
-		const paint = (text: string): string => painter.paint("divider", text);
-		// Read and delete: the handoff spans exactly one token pair.
-		const telemetry = renderedDividerTelemetry.get(this);
-		if (telemetry !== undefined) renderedDividerTelemetry.delete(this);
-		const label = telemetry === undefined ? undefined : formatLabel(telemetry, current, painter);
-		const rule = label === undefined
-			? paint(glyph.repeat(Math.min(width, HR_MAX_WIDTH)))
-			: decorateRule(paint, glyph, Math.min(width, HR_MAX_WIDTH), label);
-		const rows = [rule];
-		// Same spacing rule as Pi's own horizontal rule.
+		const rows = [painter.paint("divider", glyph.repeat(Math.max(0, width)))];
 		if (nextTokenType && nextTokenType !== "space") rows.push("");
 		return rows;
 	};
-
 	markdownProto.renderToken = patched;
 	markdownProto[PATCH_KEY] = true;
 
-	// The rail is prepended to the rendered rows, so `UserMessageComponent.text` (the copy payload)
-	// keeps the original markdown and the bubble `[Copy]` button copies the message, not the glyph.
+	const assistantProto = AssistantMessageComponent.prototype as unknown as AssistantMessageInternals;
+	const originalAssistantRender = assistantProto.render;
+	const assistantRules = new WeakMap<object, { render(width: number): string[]; invalidate(): void }>();
+	let patchedAssistantRender: ((this: AssistantMessageInternals, width: number) => string[]) | undefined;
+	if (typeof originalAssistantRender === "function") {
+		patchedAssistantRender = function (this: AssistantMessageInternals, width: number): string[] {
+			const current = source;
+			let divider = assistantRules.get(this);
+			if (divider !== undefined) {
+				const oldIndex = this.contentContainer.children.indexOf(divider);
+				if (oldIndex >= 0) this.contentContainer.children.splice(oldIndex, 1);
+			}
+			const style = current?.config().dividers ?? "none";
+			// Only a completed text answer gets a rule; tool calls and partial streams do not.
+			const final = !this.isStreaming && !this.hasToolCalls
+				&& (this.lastMessage?.stopReason === "stop" || this.lastMessage?.stopReason === "length");
+			let lastThinking = -1;
+			for (let index = 0; index < this.markdownSlots.length; index++) {
+				if (this.markdownSlots[index]?.kind === "thinking") lastThinking = index;
+			}
+			const textSlot = this.markdownSlots.slice(lastThinking + 1).find((slot) => slot.kind === "text");
+			const textIndex = textSlot === undefined ? -1 : this.contentContainer.children.indexOf(textSlot.markdown);
+			if (current && final && style !== "none" && width > 0 && textIndex >= 0) {
+				if (divider === undefined) {
+					divider = {
+						invalidate() {},
+						render(ruleWidth: number): string[] {
+							const skin = source;
+							if (!installed || !skin || ruleWidth < 1 || skin.config().dividers === "none") return [];
+							const glyph = skin.config().dividers === "dashed" ? DASHED_GLYPH : LINE_GLYPH;
+							return [createPainter(skin.theme(), skin.config()).paint("divider", glyph.repeat(ruleWidth))];
+						},
+					};
+					assistantRules.set(this, divider);
+				}
+				// Place the rule *after* thinking and before answer text. As a real child it participates
+				// in Pi's mouse layout; a prefixed render row would shift copy and thinking hit regions.
+				this.contentContainer.children.splice(textIndex, 0, divider);
+			}
+			return originalAssistantRender.call(this, width);
+		};
+		assistantProto.render = patchedAssistantRender;
+	}
+
 	const userProto = UserMessageComponent.prototype as unknown as UserMessageInternals;
 	const originalUserRender = userProto.render;
+	const userRules = new WeakMap<object, { render(width: number): string[]; invalidate(): void }>();
+	const userWidths = new WeakMap<object, number>();
 	let patchedUserRender: ((this: UserMessageInternals, width: number) => string[]) | undefined;
 	if (typeof originalUserRender === "function") {
 		patchedUserRender = function (this: UserMessageInternals, width: number): string[] {
 			const current = source;
-			// Pi pads its bubble to the width it is handed, so the two rail columns come out of the
-			// budget instead of widening the row past the terminal.
+			if (!current) return originalUserRender.call(this, width);
+			if (firstUser === undefined) firstUser = this;
+			let boundary = boundaries.get(this);
+			if (boundary === undefined) {
+				const summary = current.consumeTurnSummary?.();
+				boundary = { telemetry: summary === undefined ? undefined : parseTurnTelemetry(summary) };
+				boundaries.set(this, boundary);
+			}
+			const thisOwner = this;
+			userWidths.set(this, width);
+			let divider = userRules.get(this);
+			if (divider !== undefined) {
+				const oldIndex = this.children.indexOf(divider);
+				if (oldIndex >= 0) this.children.splice(oldIndex, 1);
+			}
+			const style = current.config().dividers;
+			const hasDivider = this !== firstUser && style !== "none" && width > 0;
+			dividerRows.set(this, hasDivider ? 1 : 0);
+			if (hasDivider) {
+				if (divider === undefined) {
+					divider = {
+						invalidate() {},
+						render(ruleWidth: number): string[] {
+							const skin = source;
+							if (!installed || !skin || ruleWidth < 1) return [];
+							const glyph = skin.config().dividers === "dashed" ? DASHED_GLYPH : LINE_GLYPH;
+							const painter = createPainter(skin.theme(), skin.config());
+							const total = userWidths.get(thisOwner) ?? ruleWidth;
+							const state = boundaries.get(thisOwner);
+							const label = state?.telemetry === undefined ? undefined : formatLabel(state.telemetry, skin, painter);
+							return [label === undefined ? painter.paint("divider", glyph.repeat(total))
+								: decorateRule((text) => painter.paint("divider", text), glyph, total, label)];
+						},
+					};
+					userRules.set(this, divider);
+				}
+				this.children.unshift(divider);
+			}
 			const budget = width - USER_BAR_COLUMNS;
-			if (!current || !current.config().userBar || budget < 1) return originalUserRender.call(this, width);
-			const rows = originalUserRender.call(this, budget);
-			// Very narrow terminals make Pi's own renderer overflow its budget (fences keep a minimum
-			// width); the rail is dropped rather than adding two more columns to an already broken row.
-			if (rows.some((line) => visibleWidth(line) > budget)) return originalUserRender.call(this, width);
-			const painter = createPainter(current.theme(), current.config());
-			const rail = `${painter.paint("userBar", USER_BAR_GLYPH)} `;
-			return rows.map((line) => `${rail}${line}`);
+			const railEnabled = current.config().userBar && budget > 0;
+			let rows = originalUserRender.call(this, railEnabled ? budget : width);
+			// Pi can overflow at very narrow widths (e.g. fenced blocks). Do not compound it.
+			if (railEnabled && rows.slice(hasDivider ? 1 : 0).some((line) => visibleWidth(line) > budget)) {
+				rows = originalUserRender.call(this, width);
+			} else if (railEnabled) {
+				const rail = `${createPainter(current.theme(), current.config()).paint("userBar", USER_BAR_GLYPH)} `;
+				rows = rows.map((line, index) => index === 0 && hasDivider ? line : `${rail}${line}`);
+			}
+			// Pi places its copy zone on row 0. Keep that zone on the original message,
+			// not on the extra divider child, so shell-integrated copy excludes the rule.
+			const zoneStart = "\x1b]133;A\x07";
+			if (hasDivider && rows.length > 1 && rows[0]?.startsWith(zoneStart)) {
+				rows[0] = rows[0].slice(zoneStart.length);
+				rows[1] = zoneStart + rows[1];
+			}
+			return rows;
 		};
 		userProto.render = patchedUserRender;
 	}
 
 	return () => {
-		// Another extension may have wrapped ours; leave its wrapper in place then.
+		installed = false;
 		if (markdownProto.renderToken === patched) markdownProto.renderToken = originalRenderToken;
 		if (patchedUserRender !== undefined && userProto.render === patchedUserRender) userProto.render = originalUserRender;
+		if (patchedAssistantRender !== undefined && assistantProto.render === patchedAssistantRender) assistantProto.render = originalAssistantRender;
 		delete markdownProto[PATCH_KEY];
 		source = undefined;
-		firstUserText = undefined;
-		dividerLabels.clear();
-		renderedDividerTelemetry = new WeakMap<object, TurnTelemetry>();
+		resetMarkdownSkinSession();
 	};
 }

@@ -4,10 +4,10 @@ import {
 	type Theme,
 } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { stampBubbleTopRow } from "./bubble.ts";
+import { userDividerRowCount } from "./markdown-skin.ts";
 import { createPainter, type ThemeConfig, type TimestampMode } from "./theme.ts";
 
-/** Installed after the bubble so it can write into the frame's top border row. */
+/** Installed after the message skin so it can skip standalone divider rows. */
 const ASSISTANT_PATCH_KEY = Symbol.for("pi-open-tui.assistant-timestamps");
 const USER_PATCH_KEY = Symbol.for("pi-open-tui.user-timestamps");
 
@@ -159,12 +159,6 @@ export function installTimestamps(next: TimestampSource): (() => void) | undefin
 		const rows = originalAssistant.call(this, width);
 		if (label === undefined || rows.length === 0) return rows;
 		const painter = createPainter(current.theme(), current.config());
-		// With the bubble installed the frame owns row 0, so the stamp rides its top border.
-		const framed = stampBubbleTopRow(rows[0] ?? "", label, painter);
-		if (framed !== undefined) {
-			rows[0] = framed;
-			return rows;
-		}
 		const prefixed = writePrefix(rows[0] ?? "", painter.paint("divider", label), width);
 		if (prefixed !== undefined) rows[0] = prefixed;
 		return rows;
@@ -181,8 +175,9 @@ export function installTimestamps(next: TimestampSource): (() => void) | undefin
 		const label = labelFor(this, "user", styleFor(mode));
 		const rows = originalUser.call(this, width);
 		if (label === undefined || rows.length === 0) return rows;
-		const written = writeRight(rows[0] ?? "", createPainter(current.theme(), current.config()).paint("divider", label), width);
-		if (written !== undefined) rows[0] = written;
+		const targetRow = userDividerRowCount(this);
+		const written = writeRight(rows[targetRow] ?? "", createPainter(current.theme(), current.config()).paint("divider", label), width);
+		if (written !== undefined) rows[targetRow] = written;
 		return rows;
 	};
 

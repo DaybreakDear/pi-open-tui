@@ -80,7 +80,6 @@ Pi 主题只改造 Pi 本身。open-tui 另用十三个槽位给自己的区域�
     "banding": false,
     "userBar": true,
     "expandHint": "plain",
-    "bubble": "rounded",
     "timestamps": "all"
   }
 }
@@ -90,13 +89,12 @@ Pi 主题只改造 Pi 本身。open-tui 另用十三个槽位给自己的区域�
 | --- | --- | --- |
 | `preset` | `"tokyo-night"` | `tokyo-night`、`catppuccin-mocha`、`gruvbox-dark`、`rose-pine-moon`，或 `pi` 表示改用 Pi 自己的 token |
 | `slots` | `{}` | 按槽位覆盖颜色，槽位见下表 |
-| `dividers` | `"line"` | `line`、`dashed` 或 `none`。轮次之间画分隔线，也用于底栏分隔符 |
+| `dividers` | `"line"` | `line`（粗实线 `━`）、`dashed`（粗虚线 `╍`）或 `none`。在后续用户消息前及助手最终答案前（思考内容之后）独立绘制与终端窗口宽度同步的分隔线，不写进 Markdown 正文或复制内容；同一颜色也用于底栏分隔符 |
 | `gutter` | `true` | 命令输出左侧的竖线。只有 `toolView.mode` 为 `compact` 时才会画出；未开紧凑时设置窗口会在该行后标注 `(需 compact)` |
 | `banding` | `false` | 交替的工具行使用淡背景 |
 | `userBar` | `true` | 用户消息左侧的彩色竖条 |
 | `expandHint` | `"plain"` | 设为 `key` 会给展开提示里的 `ctrl+o` 键幅加下划线 |
-| `bubble` | `"rounded"` | **仅**包裹助手回复，用户消息从不加框。它消耗宽度预算而不额外撑宽：每侧占用一个 `│` 加一列间隔，终端窄于 20 列、消息内含图片，或某行渲染后宽于内宽时，整条回复回到无框渲染而不是被裁切。`off` 逐字节回到未打补丁的渲染 |
-| `timestamps` | `"all"` | 右对齐且带日期的时间戳：`all` 给用户与助手消息都加，`assistant` 只加助手回复，`chinese` 两侧都加并用中文措辞，`off` 全关。助手的时间戳写在气泡顶边框或（气泡关闭时）Pi 本来就预留的空白行上；用户时间戳只写进首行末尾的空白列。它不新增行，窄于 24 列时两者都跳过 |
+| `timestamps` | `"all"` | 右对齐且带日期的时间戳：`all` 给用户与助手消息都加，`assistant` 只加助手回复，`chinese` 两侧都加并用中文措辞，`off` 全关。助手时间戳写在 Pi 自带的空白行，用户时间戳跳过独立分隔线、写入消息自带的首个空白行。不新增行；窄于 24 列时跳过 |
 
 时间来自消息本身：Pi 恢复的消息带 ISO 格式的 `timestamp`，实时回复带毫秒时间戳的 `lastMessage.timestamp`，两者都没有时在首次渲染取一次时钟快照，所以缩放或切主题都不会让时间戳跳动。
 
@@ -111,7 +109,7 @@ Pi 主题只改造 Pi 本身。open-tui 另用十三个槽位给自己的区域�
 
 月份与日期不补零，时分继续补零。「今天/昨天」按本地**日历日**比较而非毫秒差，所以 23:59 与次日 00:01 相差一天，夏令时那天也仍然是一天。未来时间戳按今天处理，不会显示成未来日期。`all` 与 `chinese` 目前渲染完全一致：`chinese` 是固定包含用户消息、带中文措辞的单值入口。
 
-> **已知取舍：** 边框的 `│` 和 `─` 是真实字符，终端鼠标框选复制时会连同回复一起带上——Pi 复制时只剥 ANSI，没有排除边框字符的钩子。
+0.7.0 已移除助手气泡：终端鼠标框选会把边框字符一起复制。旧版配置中的 `theme.bubble` 加载时会被丢弃。sandbox 等扩展通过 `ctx.ui.setStatus("sandbox", ...)` 发布的状态默认显示在底栏；设置 `footerSegments.extensionStatuses: false` 可隐藏。
 
 可覆盖的槽位。未知槽位名会被**静默丢弃**，请照表抄：
 
